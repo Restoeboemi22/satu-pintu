@@ -3,7 +3,7 @@ import { Student } from '@/types/student';
 import { database, db, ensureGasAuth } from '@/lib/firebase';
 import { edulockAuth } from '@/lib/edulockFirebase';
 import { useAuthStore } from '@/store/useAuthStore';
-import { ref, onValue, update, get, query as rtdbQuery, orderByChild, equalTo, Unsubscribe } from 'firebase/database';
+import { ref, onValue, update, get, Unsubscribe } from 'firebase/database';
 import { collection, query, where, getDocs, doc, writeBatch } from 'firebase/firestore';
 import { callAdminApi } from '@/lib/callAdminApi';
 
@@ -61,21 +61,28 @@ let sharedStudentSubscriberCount = 0;
 let sharedStudentBootstrapping = false;
 
 const buildStudentsRef = () => {
-  const authUser = useAuthStore.getState().user;
-  const scope = String(authUser?.schoolId || "").trim().toLowerCase();
-  const isSuperAdmin = authUser?.role === "super_admin";
+  return ref(database, "master_students");
+};
 
-  return !isSuperAdmin && scope
-    ? rtdbQuery(ref(database, "master_students"), orderByChild("schoolId"), equalTo(scope))
-    : ref(database, "master_students");
+const getStudentScope = () => {
+  const authUser = useAuthStore.getState().user;
+  return {
+    scope: String(authUser?.schoolId || "").trim().toLowerCase(),
+    isSuperAdmin: authUser?.role === "super_admin",
+  };
 };
 
 const mapStudents = (data: unknown): Student[] => {
   if (!data || typeof data !== "object") return [];
+  const { scope, isSuperAdmin } = getStudentScope();
 
   const list: Student[] = Object.entries(data)
     .map(([key, value]: any) => {
       const obj = value || {};
+      const studentSchoolId = String(obj?.schoolId || "").trim().toLowerCase();
+      if (!isSuperAdmin && scope) {
+        if (!studentSchoolId || studentSchoolId !== scope) return null;
+      }
       const nisn = String(obj?.nisn || key || "").trim();
       const name = String(obj?.name || "").trim();
       if (!nisn || !name) return null;

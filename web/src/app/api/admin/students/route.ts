@@ -163,18 +163,21 @@ async function getExistingStudent(nisn: string) {
 
 async function getStudentsBySchoolId(schoolId: string) {
   const gasDb = getGasAdminDb();
-  const snapshot = await gasDb.ref("master_students").orderByChild("schoolId").equalTo(schoolId).get();
+  const normalizedSchoolId = normalizeText(schoolId).toLowerCase();
+  const snapshot = await gasDb.ref("master_students").get();
   if (!snapshot.exists()) return [];
 
-  return Object.entries<any>(snapshot.val() || {}).map(([key, value]) => ({
-    nisn: normalizeText(value?.nisn || key),
-    name: normalizeText(value?.name),
-    gender: normalizeGender(value?.gender),
-    religion: normalizeReligion(value?.religion),
-    status: normalizeStatus(value?.status),
-    schoolId: normalizeText(value?.schoolId),
-    className: normalizeText(value?.class),
-  }));
+  return Object.entries<any>(snapshot.val() || {})
+    .map(([key, value]) => ({
+      nisn: normalizeText(value?.nisn || key),
+      name: normalizeText(value?.name),
+      gender: normalizeGender(value?.gender),
+      religion: normalizeReligion(value?.religion),
+      status: normalizeStatus(value?.status),
+      schoolId: normalizeText(value?.schoolId),
+      className: normalizeText(value?.class),
+    }))
+    .filter((student) => normalizeText(student.schoolId).toLowerCase() === normalizedSchoolId);
 }
 
 async function getClassesBySchoolId(schoolId: string) {

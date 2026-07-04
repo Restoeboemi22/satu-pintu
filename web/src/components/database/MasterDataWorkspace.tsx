@@ -1245,9 +1245,7 @@ function MasterStudentsContent() {
     const unsubs: Array<() => void> = [];
 
     if (activeSub === "students" || activeSub === "staff" || activeSub === "classes") {
-      const baseRef = schoolId
-        ? dbQuery(ref(database, "master_students"), orderByChild("schoolId"), equalTo(schoolId))
-        : ref(database, "master_students");
+      const baseRef = ref(database, "master_students");
       const unsub = onValue(baseRef, (snap) => {
         const data = snap.val();
         if (!data || typeof data !== "object") {
@@ -1255,24 +1253,29 @@ function MasterStudentsContent() {
           setLastSyncAt(Date.now());
           return;
         }
-        const list: StudentRow[] = Object.entries(data).map(([key, v]: any) => {
-          const obj = v || {};
-          const religionRaw = normalize(obj?.religion || obj?.agama).toUpperCase();
-          return {
-            nisn: String(obj?.nisn || key || ""),
-            name: String(obj?.name || ""),
-            gender: obj?.gender === "L" || obj?.gender === "P" ? obj.gender : "",
-            religion: religionRaw === "NON_ISLAM" ? "NON_ISLAM" : religionRaw ? "ISLAM" : "",
-            class: String(obj?.class || ""),
-            status: obj?.status === "Nonaktif" ? "Nonaktif" : "Aktif",
-            device: obj?.device ? String(obj.device) : "",
-            schoolId: obj?.schoolId ? String(obj.schoolId) : undefined,
-            schoolName: obj?.schoolName ? String(obj.schoolName) : undefined,
-            npsn: obj?.npsn ? String(obj.npsn) : undefined,
-            createdAt: typeof obj?.createdAt === "number" ? obj.createdAt : undefined,
-            updatedAt: typeof obj?.updatedAt === "number" ? obj.updatedAt : undefined,
-          };
-        });
+        const list: StudentRow[] = Object.entries(data)
+          .map(([key, v]: any) => {
+            const obj = v || {};
+            const rowSchoolId = normalize(obj?.schoolId).toLowerCase();
+            if (schoolScopeId && rowSchoolId !== schoolScopeId) return null;
+
+            const religionRaw = normalize(obj?.religion || obj?.agama).toUpperCase();
+            return {
+              nisn: String(obj?.nisn || key || ""),
+              name: String(obj?.name || ""),
+              gender: obj?.gender === "L" || obj?.gender === "P" ? obj.gender : "",
+              religion: religionRaw === "NON_ISLAM" ? "NON_ISLAM" : religionRaw ? "ISLAM" : "",
+              class: String(obj?.class || ""),
+              status: obj?.status === "Nonaktif" ? "Nonaktif" : "Aktif",
+              device: obj?.device ? String(obj.device) : "",
+              schoolId: obj?.schoolId ? String(obj.schoolId) : undefined,
+              schoolName: obj?.schoolName ? String(obj.schoolName) : undefined,
+              npsn: obj?.npsn ? String(obj.npsn) : undefined,
+              createdAt: typeof obj?.createdAt === "number" ? obj.createdAt : undefined,
+              updatedAt: typeof obj?.updatedAt === "number" ? obj.updatedAt : undefined,
+            };
+          })
+          .filter(Boolean) as StudentRow[];
         list.sort((a, b) => (Number(b.updatedAt || b.createdAt || 0) || 0) - (Number(a.updatedAt || a.createdAt || 0) || 0));
         setStudentRows(list);
         setLastSyncAt(Date.now());
@@ -1427,7 +1430,7 @@ function MasterStudentsContent() {
     return () => {
       for (const u of unsubs) u();
     };
-  }, [activeSub, isAuthenticated, mounted, user?.role, _hasHydrated, schoolId]);
+  }, [activeSub, isAuthenticated, mounted, user?.role, _hasHydrated, schoolId, schoolScopeId]);
 
   const gradeTabs = useMemo(() => [7, 8, 9] as const, []);
 

@@ -35,3 +35,8 @@ native-mobile/captures/
 **/google-services.json
 **/GoogleService-Info.plist
 
+
+.vercel
+web/.vercel-global/
+web/.xdg-data/
+web/.xdg-config/
