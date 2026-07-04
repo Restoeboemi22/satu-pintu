@@ -1,0 +1,43 @@
+schoolId,schoolName,npsn,systemEmail,defaultPassword,role,isActive
+smpn_1_jatirejo,SMPN 1 JATIREJO,20502647,20502647@edulock.local,admin123,admin,true
+smpn_2_jatirejo,SMPN 2 JATIREJO,20502625,20502625@edulock.local,admin123,admin,true
+smpn_3_jatirejo,SMPN SATU ATAP MANTING,20555815,20555815@edulock.local,admin123,admin,true
+smpn_1_gondang,SMPN 1 GONDANG,20502646,20502646@edulock.local,admin123,admin,true
+smpn_2_gondang,SMPN 2 GONDANG,20502624,20502624@edulock.local,admin123,admin,true
+smpn_3_gondang,SMPN 3 GONDANG,20551769,20551769@edulock.local,admin123,admin,true
+smpn_1_pacet,SMPN 1 PACET,20502654,20502654@edulock.local,admin123,admin,true
+smpn_2_pacet,SMPN 2 PACET,20502631,20502631@edulock.local,admin123,admin,true
+smpn_3_pacet,SMPN 3 PACET,20555784,20555784@edulock.local,admin123,admin,true
+smpn_1_trawas,SMPN 1 TRAWAS,20502636,20502636@edulock.local,admin123,admin,true
+smpn_2_trawas,SMPN 2 TRAWAS,20502634,20502634@edulock.local,admin123,admin,true
+smpn_1_ngoro,SMPN 1 NGORO,20502653,20502653@edulock.local,admin123,admin,true
+smpn_2_ngoro,SMPN 2 NGORO,20502630,20502630@edulock.local,admin123,admin,true
+smpn_3_ngoro,SMPN 3 SATU ATAP NGORO,69872302,69872302@edulock.local,admin123,admin,true
+smpn_1_pungging,SMPN 1 PUNGGING,20502655,20502655@edulock.local,admin123,admin,true
+smpn_2_pungging,SMPN 2 PUNGGING,20502632,20502632@edulock.local,admin123,admin,true
+smpn_1_kutorejo,SMPN 1 KUTOREJO,20502650,20502650@edulock.local,admin123,admin,true
+smpn_2_kutorejo,SMPN 2 KUTOREJO,20502627,20502627@edulock.local,admin123,admin,true
+smpn_3_kutorejo,SMPN 3 KUTOREJO,20502656,20502656@edulock.local,admin123,admin,true
+smpn_1_mojosari,SMPN 1 MOJOSARI,20502652,20502652@edulock.local,admin123,admin,true
+smpn_2_mojosari,SMPN 2 MOJOSARI,20502629,20502629@edulock.local,admin123,admin,true
+smpn_1_bangsal,SMPN 1 BANGSAL,20502642,20502642@edulock.local,admin123,admin,true
+smpn_2_bangsal,SMPN 2 BANGSAL,20502620,20502620@edulock.local,admin123,admin,true
+smpn_1_dlanggu,SMPN 1 DLANGGU,20502644,20502644@edulock.local,admin123,admin,true
+smpn_2_dlanggu,SMPN 2 DLANGGU,20502622,20502622@edulock.local,admin123,admin,true
+smpn_1_puri,SMPN 1 PURI,20502638,20502638@edulock.local,admin123,admin,true
+smpn_2_puri,SMPN 2 PURI,70002096,70002096@edulock.local,admin123,admin,true
+smpn_1_trowulan,SMPN 1 TROWULAN,20502619,20502619@edulock.local,admin123,admin,true
+smpn_2_trowulan,SMPN 2 TROWULAN,20502635,20502635@edulock.local,admin123,admin,true
+smpn_1_sooko,SMPN 1 SOOKO,20502637,20502637@edulock.local,admin123,admin,true
+smpn_2_sooko,SMPN 2 SOOKO,20502633,20502633@edulock.local,admin123,admin,true
+smpn_1_gedeg,SMPN 1 GEDEG,20502645,20502645@edulock.local,admin123,admin,true
+smpn_2_gedeg,SMPN 2 GEDEG,20502623,20502623@edulock.local,admin123,admin,true
+smpn_3_gedeg,SMP GEDEG SWASTA,20502603,20502603@edulock.local,admin123,admin,true
+smpn_1_kemlagi,SMPN 1 KEMLAGI,20502649,20502649@edulock.local,admin123,admin,true
+smpn_2_kemlagi,SMPN 2 KEMLAGI,70011144,70011144@edulock.local,admin123,admin,true
+smpn_1_jetis,SMPN 1 JETIS,20502648,20502648@edulock.local,admin123,admin,true
+smpn_2_jetis,SMPN 2 JETIS,20502626,20502626@edulock.local,admin123,admin,true
+smpn_1_dawar_blandong,SMPN 1 DAWARBLANDONG,20502643,20502643@edulock.local,admin123,admin,true
+smpn_2_dawar_blandong,SMPN 2 DAWARBLANDONG,20502621,20502621@edulock.local,admin123,admin,true
+smpn_1_mojoanyar,SMPN 1 MOJOANYAR,20502651,20502651@edulock.local,admin123,admin,true
+smpn_2_mojoanyar,SMPN 2 MOJOANYAR,20502628,20502628@edulock.local,admin123,admin,true

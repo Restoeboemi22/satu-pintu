@@ -1,0 +1,17 @@
+{
+  "projects": {
+    "default": "satu-pintu-gas-dev",
+    "gas": "satu-pintu-gas-dev",
+    "edulock": "satu-pintu-edulock-dev"
+  },
+  "targets": {
+    "satu-pintu-gas-dev": {
+      "hosting": {
+        "check": [
+          "satu-pintu-gas-dev"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

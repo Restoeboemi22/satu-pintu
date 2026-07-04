@@ -1,0 +1,380 @@
+[
+  {
+    "schoolId": "smpn_1_jatirejo",
+    "schoolName": "SMPN 1 JATIREJO",
+    "npsn": "20502647",
+    "email": "20502647@edulock.local",
+    "uid": "eRmNPKzQBJNPiljIjeUo2BvdPoZ2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_jatirejo",
+    "schoolName": "SMPN 2 JATIREJO",
+    "npsn": "20502625",
+    "email": "20502625@edulock.local",
+    "uid": "Q6gZKBFPFzaY3XKnHGX8hx0ELzg2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_3_jatirejo",
+    "schoolName": "SMPN SATU ATAP MANTING",
+    "npsn": "20555815",
+    "email": "20555815@edulock.local",
+    "uid": "9CiO1vovIIdV1P6Ncg4tAU01nm73",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_gondang",
+    "schoolName": "SMPN 1 GONDANG",
+    "npsn": "20502646",
+    "email": "20502646@edulock.local",
+    "uid": "SqcP4tYAzLQNFryRPLmX2KExF563",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_gondang",
+    "schoolName": "SMPN 2 GONDANG",
+    "npsn": "20502624",
+    "email": "20502624@edulock.local",
+    "uid": "WW3Zz8xN74TuRLuNEm9AQugHgDx2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_3_gondang",
+    "schoolName": "SMPN 3 GONDANG",
+    "npsn": "20551769",
+    "email": "20551769@edulock.local",
+    "uid": "LQIkTpicYkXeeH1i8eXBB1JRIs62",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_pacet",
+    "schoolName": "SMPN 1 PACET",
+    "npsn": "20502654",
+    "email": "20502654@edulock.local",
+    "uid": "7w1cF8FdtAax3e73Yi0YZkmgVfn2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_pacet",
+    "schoolName": "SMPN 2 PACET",
+    "npsn": "20502631",
+    "email": "20502631@edulock.local",
+    "uid": "7CrCrwY7NoY4PY7qGAxPqnaiWF22",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_3_pacet",
+    "schoolName": "SMPN 3 PACET",
+    "npsn": "20555784",
+    "email": "20555784@edulock.local",
+    "uid": "OVOsNFoWpBUUIomBzBcEVL8TGX43",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_trawas",
+    "schoolName": "SMPN 1 TRAWAS",
+    "npsn": "20502636",
+    "email": "20502636@edulock.local",
+    "uid": "kEElL9Tks0hUPEO5JQkK7R88NOF2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_trawas",
+    "schoolName": "SMPN 2 TRAWAS",
+    "npsn": "20502634",
+    "email": "20502634@edulock.local",
+    "uid": "ewDk1Y6C8JSGd61hfDwOy6HTD1I3",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_ngoro",
+    "schoolName": "SMPN 1 NGORO",
+    "npsn": "20502653",
+    "email": "20502653@edulock.local",
+    "uid": "QATxsrvHtySEZ5T7Wgn5FJzZImH3",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_ngoro",
+    "schoolName": "SMPN 2 NGORO",
+    "npsn": "20502630",
+    "email": "20502630@edulock.local",
+    "uid": "t47I4F0Jh2h25MA5OQNFoV4VNnm2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_3_ngoro",
+    "schoolName": "SMPN 3 SATU ATAP NGORO",
+    "npsn": "69872302",
+    "email": "69872302@edulock.local",
+    "uid": "lZhnOf8OXXSDQcQeEQKnufNDT9E3",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_pungging",
+    "schoolName": "SMPN 1 PUNGGING",
+    "npsn": "20502655",
+    "email": "20502655@edulock.local",
+    "uid": "jqpePK0Xx7OvsPCsF8uXdPC1SIe2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_pungging",
+    "schoolName": "SMPN 2 PUNGGING",
+    "npsn": "20502632",
+    "email": "20502632@edulock.local",
+    "uid": "8DTqqU4TWQUDph7RNx4SlXA9vow1",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_kutorejo",
+    "schoolName": "SMPN 1 KUTOREJO",
+    "npsn": "20502650",
+    "email": "20502650@edulock.local",
+    "uid": "qxyN05PF91fwl065xlwpKgzkzlE3",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_kutorejo",
+    "schoolName": "SMPN 2 KUTOREJO",
+    "npsn": "20502627",
+    "email": "20502627@edulock.local",
+    "uid": "OweJrwC75jW5jp4gFGaEPlVNXrb2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_3_kutorejo",
+    "schoolName": "SMPN 3 KUTOREJO",
+    "npsn": "20502656",
+    "email": "20502656@edulock.local",
+    "uid": "AcvZ2zGseOPQMs944oa1eaZbixu2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_mojosari",
+    "schoolName": "SMPN 1 MOJOSARI",
+    "npsn": "20502652",
+    "email": "20502652@edulock.local",
+    "uid": "DLpgU2TqdEWI5H3C7OJYNM2peSf1",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_mojosari",
+    "schoolName": "SMPN 2 MOJOSARI",
+    "npsn": "20502629",
+    "email": "20502629@edulock.local",
+    "uid": "6rlEzSvH3aUseNBVxMHYJdotm6b2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_bangsal",
+    "schoolName": "SMPN 1 BANGSAL",
+    "npsn": "20502642",
+    "email": "20502642@edulock.local",
+    "uid": "DdlDsY1ExbZhmhTYVZkxjNrWBun1",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_bangsal",
+    "schoolName": "SMPN 2 BANGSAL",
+    "npsn": "20502620",
+    "email": "20502620@edulock.local",
+    "uid": "3ueONWRjgpfXLuwpXG6JRKOvVYD2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_dlanggu",
+    "schoolName": "SMPN 1 DLANGGU",
+    "npsn": "20502644",
+    "email": "20502644@edulock.local",
+    "uid": "3aVqQoQ6Mof5flr9GsHN6jeEjAM2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_dlanggu",
+    "schoolName": "SMPN 2 DLANGGU",
+    "npsn": "20502622",
+    "email": "20502622@edulock.local",
+    "uid": "pKkZxggPYUaC8KsiTkXxYpyyz0l2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_puri",
+    "schoolName": "SMPN 1 PURI",
+    "npsn": "20502638",
+    "email": "20502638@edulock.local",
+    "uid": "O6ZMZtcwO4hgC75Rpko1B6ZeFXl1",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_puri",
+    "schoolName": "SMPN 2 PURI",
+    "npsn": "70002096",
+    "email": "70002096@edulock.local",
+    "uid": "rM6YijMW6tP1dStKbnXjL1nfKWj1",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_trowulan",
+    "schoolName": "SMPN 1 TROWULAN",
+    "npsn": "20502619",
+    "email": "20502619@edulock.local",
+    "uid": "9VTB8dHtVVfcBfjNvSSQqnoWWpl1",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_trowulan",
+    "schoolName": "SMPN 2 TROWULAN",
+    "npsn": "20502635",
+    "email": "20502635@edulock.local",
+    "uid": "eLGMQ0z5fUVFVkUbKihWS4qIQZS2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_sooko",
+    "schoolName": "SMPN 1 SOOKO",
+    "npsn": "20502637",
+    "email": "20502637@edulock.local",
+    "uid": "H1pNJkaY1MMRZlAlQMgb2iw54sw1",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_sooko",
+    "schoolName": "SMPN 2 SOOKO",
+    "npsn": "20502633",
+    "email": "20502633@edulock.local",
+    "uid": "qMxH8owdXrMpIrEqeplDPvYCMT33",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_gedeg",
+    "schoolName": "SMPN 1 GEDEG",
+    "npsn": "20502645",
+    "email": "20502645@edulock.local",
+    "uid": "2N6EzkOJrXa7c5SpmiNrkDnGxq32",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_gedeg",
+    "schoolName": "SMPN 2 GEDEG",
+    "npsn": "20502623",
+    "email": "20502623@edulock.local",
+    "uid": "e3CkkoUnDVcVXzBqDpmVplAjnO43",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_3_gedeg",
+    "schoolName": "SMP GEDEG SWASTA",
+    "npsn": "20502603",
+    "email": "20502603@edulock.local",
+    "uid": "RpCHWHn7IDXomDOFg70eOjRhrft1",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_kemlagi",
+    "schoolName": "SMPN 1 KEMLAGI",
+    "npsn": "20502649",
+    "email": "20502649@edulock.local",
+    "uid": "fyBuQeMuFOTOnYKuJCXkDikoclD2",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_kemlagi",
+    "schoolName": "SMPN 2 KEMLAGI",
+    "npsn": "70011144",
+    "email": "70011144@edulock.local",
+    "uid": "rfAFEASsc8fvVi9EnXFtelIP7zh1",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_jetis",
+    "schoolName": "SMPN 1 JETIS",
+    "npsn": "20502648",
+    "email": "20502648@edulock.local",
+    "uid": "eNsnWBzLqGgx9I2T4gi9Vba2Ypp1",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_jetis",
+    "schoolName": "SMPN 2 JETIS",
+    "npsn": "20502626",
+    "email": "20502626@edulock.local",
+    "uid": "tJOvAkA58JTkmHgPI2TKXTySfL02",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_dawar_blandong",
+    "schoolName": "SMPN 1 DAWARBLANDONG",
+    "npsn": "20502643",
+    "email": "20502643@edulock.local",
+    "uid": "uxrCuYCBtWZty0YSnQfkrEd8qv72",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_dawar_blandong",
+    "schoolName": "SMPN 2 DAWARBLANDONG",
+    "npsn": "20502621",
+    "email": "20502621@edulock.local",
+    "uid": "HpN9jHb3mIdArKnRMlyTts5k5UH3",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_1_mojoanyar",
+    "schoolName": "SMPN 1 MOJOANYAR",
+    "npsn": "20502651",
+    "email": "20502651@edulock.local",
+    "uid": "cAQhUw0psaUg1kEkMx9nfR9SmR23",
+    "created": true,
+    "isActive": true
+  },
+  {
+    "schoolId": "smpn_2_mojoanyar",
+    "schoolName": "SMPN 2 MOJOANYAR",
+    "npsn": "20502628",
+    "email": "20502628@edulock.local",
+    "uid": "IaqSuqCemkbQpEJDmNINO73vDHo1",
+    "created": true,
+    "isActive": true
+  }
+]

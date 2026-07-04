@@ -1,0 +1,37 @@
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+**/.idea/
+*.iml
+
+# Root/workspace artifacts
+Siap Pakai/
+
+# Web (Next.js)
+web/node_modules/
+web/.next/
+web/out/
+
+# Native Android
+native-mobile/.gradle/
+native-mobile/local.properties
+native-mobile/**/build/
+native-mobile/.externalNativeBuild/
+native-mobile/.cxx/
+native-mobile/captures/
+
+# Secrets and local environment files
+**/.env
+**/.env.local
+**/.env.local.*
+**/.env.*.local
+**/service-account.json
+**/service-account.local.json
+**/keystore.properties
+**/*.jks
+**/*.keystore
+**/google-services.json
+**/GoogleService-Info.plist
+
