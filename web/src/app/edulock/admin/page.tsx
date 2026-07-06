@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { equalTo, onValue, orderByChild, query, ref, remove, set, update } from "firebase/database";
@@ -10,12 +10,12 @@ import * as XLSX from "xlsx";
 import { database } from "@/lib/firebase";
 import { edulockAuth, edulockDb } from "@/lib/edulockFirebase";
 import { useEduLockAuth } from "@/lib/useEduLockAuth";
+import { useAuthStore } from "@/store/useAuthStore";
 import {
   Activity,
   ArrowLeft,
   Clock,
   Download,
-  FileSpreadsheet,
   Key,
   LayoutDashboard,
   Lock,
@@ -30,7 +30,6 @@ import {
   ShieldAlert,
   Trash2,
   Unlock,
-  Upload,
   UserCog,
   Users,
   Wifi,
@@ -104,10 +103,15 @@ export default function EduLockSchoolAdminPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { profile } = useEduLockAuth();
+  const portalUser = useAuthStore((state) => state.user);
 
-  const schoolId = String(profile?.schoolId || "").trim().toLowerCase();
-  const schoolName = String(profile?.schoolName || "").trim();
-  const npsn = String(profile?.npsn || "").trim();
+  const portalSchoolId = String(portalUser?.role === "admin" ? portalUser?.schoolId || "" : "").trim().toLowerCase();
+  const portalSchoolName = String(portalUser?.role === "admin" ? portalUser?.schoolName || "" : "").trim();
+  const portalNpsn = String(portalUser?.role === "admin" ? portalUser?.npsn || "" : "").trim();
+
+  const schoolId = (portalSchoolId || String(profile?.schoolId || "").trim()).toLowerCase();
+  const schoolName = portalSchoolName || String(profile?.schoolName || "").trim();
+  const npsn = portalNpsn || String(profile?.npsn || "").trim();
 
   const callEduLockSecurityApi = async (
     method: "POST" | "PUT" | "DELETE",
@@ -163,6 +167,31 @@ export default function EduLockSchoolAdminPage() {
     return result;
   };
 
+  const fetchAdminStudentSnapshot = async (currentSchoolId: string) => {
+    const currentUser = edulockAuth.currentUser;
+    if (!currentUser) {
+      throw new Error("Sesi EduLock tidak aktif. Silakan login ulang.");
+    }
+
+    const idToken = await currentUser.getIdToken();
+    const search = new URLSearchParams();
+    if (currentSchoolId) search.set("schoolId", currentSchoolId);
+    const response = await fetch(`/api/admin/students?${search.toString()}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+      cache: "no-store",
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result?.success === false) {
+      throw new Error(String(result?.message || "Gagal memuat data induk siswa dari backend."));
+    }
+
+    return result?.data || {};
+  };
+
   const pad2 = (value: number) => String(value).padStart(2, "0");
   const now = new Date();
   const defaultStart = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
@@ -170,8 +199,6 @@ export default function EduLockSchoolAdminPage() {
 
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const importFileInputRef = useRef<HTMLInputElement | null>(null);
-
   const [activeCodes, setActiveCodes] = useState<any[]>([]);
   const [activeSessions, setActiveSessions] = useState<ActiveSessionRow[]>([]);
   const [masterStudents, setMasterStudents] = useState<StudentRow[]>([]);
@@ -179,7 +206,6 @@ export default function EduLockSchoolAdminPage() {
   const [violations, setViolations] = useState<ViolationRow[]>([]);
   const [classCatalog, setClassCatalog] = useState<Array<{ key: string; name: string; createdAt?: number; updatedAt?: number }>>([]);
   const [disabledClassKeys, setDisabledClassKeys] = useState<string[]>([]);
-  const [newClassName, setNewClassName] = useState("");
 
   const [startTimeInput, setStartTimeInput] = useState(defaultStart);
   const [endTimeInput, setEndTimeInput] = useState(defaultEnd);
@@ -199,8 +225,6 @@ export default function EduLockSchoolAdminPage() {
   });
   const [uninstallAccess, setUninstallAccess] = useState<any>(null);
 
-  const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
-  const [newStudent, setNewStudent] = useState({ nisn: "", name: "", class: "" });
   const [bulkRevokeClassesText, setBulkRevokeClassesText] = useState("");
   const [studentClassFilterKey, setStudentClassFilterKey] = useState<string>("all");
   const [monitoringClassFilterKey, setMonitoringClassFilterKey] = useState<string>("all");
@@ -443,35 +467,46 @@ export default function EduLockSchoolAdminPage() {
   useEffect(() => {
     if (!schoolId) {
       setMasterStudents([]);
+      setStatusMessage((prev) => (prev.type === "error" && prev.text.includes("DATABASE GAS") ? { type: "", text: "" } : prev));
       return;
     }
-    const baseRef = query(ref(database, "master_students"), orderByChild("schoolId"), equalTo(schoolId));
-    const unsub = onValue(baseRef, (snapshot) => {
-      const data = snapshot.val();
-      if (!data || typeof data !== "object") {
+    let disposed = false;
+
+    void fetchAdminStudentSnapshot(schoolId)
+      .then((data) => {
+        if (disposed) return;
+        const list: StudentRow[] = Array.isArray(data?.students)
+          ? data.students
+              .map((row: any) => {
+                const nisnValue = String(row?.nisn || "").trim();
+                const nameValue = String(row?.name || "").trim();
+                const rowSchoolId = String(row?.schoolId || "").trim().toLowerCase();
+                if (!nisnValue || !nameValue) return null;
+                return {
+                  nisn: nisnValue,
+                  name: nameValue,
+                  class: String(row?.className || row?.class || "").trim(),
+                  schoolId: rowSchoolId,
+                  schoolName: String(row?.schoolName || "").trim(),
+                  npsn: String(row?.npsn || "").trim(),
+                } as StudentRow;
+              })
+              .filter(Boolean) as StudentRow[]
+          : [];
+        list.sort((a, b) => String(a.class || "").localeCompare(String(b.class || ""), "id-ID") || String(a.name || "").localeCompare(String(b.name || ""), "id-ID"));
+        setMasterStudents(list);
+        setStatusMessage((prev) => (prev.type === "error" && prev.text.includes("DATABASE GAS") ? { type: "", text: "" } : prev));
+      })
+      .catch((error: any) => {
+        if (disposed) return;
+        console.error("EduLock backend student snapshot failed:", error);
         setMasterStudents([]);
-        return;
-      }
-      const list: StudentRow[] = Object.entries(data)
-        .map(([key, value]: any) => {
-          const obj = value || {};
-          const nisnValue = String(obj?.nisn || key || "").trim();
-          const nameValue = String(obj?.name || "").trim();
-          if (!nisnValue || !nameValue) return null;
-          return {
-            nisn: nisnValue,
-            name: nameValue,
-            class: obj?.class ? String(obj.class) : "",
-            schoolId: obj?.schoolId ? String(obj.schoolId).trim().toLowerCase() : "",
-            schoolName: obj?.schoolName ? String(obj.schoolName) : "",
-            npsn: obj?.npsn ? String(obj.npsn) : "",
-          } as StudentRow;
-        })
-        .filter(Boolean) as StudentRow[];
-      list.sort((a, b) => String(a.class || "").localeCompare(String(b.class || ""), "id-ID") || String(a.name || "").localeCompare(String(b.name || ""), "id-ID"));
-      setMasterStudents(list);
-    });
-    return () => unsub();
+        setStatusMessage({ type: "error", text: String(error?.message || "Gagal membaca data induk siswa dari backend DATABASE.") });
+      });
+
+    return () => {
+      disposed = true;
+    };
   }, [schoolId]);
 
   const students = useMemo(() => {
@@ -600,38 +635,42 @@ export default function EduLockSchoolAdminPage() {
       setDisabledClassKeys([]);
       return;
     }
-    const classesRef = ref(database, `master_classes/${schoolId}`);
-    const unsub = onValue(classesRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data && typeof data === "object") {
-        const disabledKeys = new Set<string>();
-        const list = Object.entries(data)
-          .map(([key, value]) => {
-            const obj = (value as any) || {};
-            const name = String(obj?.className || obj?.class || key || "").trim();
-            const classKey = normalizeClassKey(name);
-            if (!name || !classKey) return null;
-            if (Boolean(obj?.disabled)) {
-              disabledKeys.add(classKey);
-              return null;
-            }
+    let disposed = false;
+
+    void fetchAdminStudentSnapshot(schoolId)
+      .then((data) => {
+        if (disposed) return;
+        const rawClasses = Array.isArray(data?.classes) ? data.classes : [];
+        const disabledKeys = rawClasses
+          .filter((row: any) => Boolean(row?.disabled))
+          .map((row: any) => normalizeClassKey(String(row?.name || row?.key || "")))
+          .filter(Boolean);
+        const list = rawClasses
+          .map((row: any) => {
+            const name = String(row?.name || "").trim();
+            const key = normalizeClassKey(name || String(row?.key || ""));
+            if (!name || !key || Boolean(row?.disabled)) return null;
             return {
-              key: classKey,
+              key,
               name,
-              createdAt: typeof obj?.createdAt === "number" ? obj.createdAt : undefined,
-              updatedAt: typeof obj?.updatedAt === "number" ? obj.updatedAt : undefined,
+              createdAt: typeof row?.createdAt === "number" ? row.createdAt : undefined,
+              updatedAt: typeof row?.updatedAt === "number" ? row.updatedAt : undefined,
             };
           })
           .filter(Boolean) as Array<{ key: string; name: string; createdAt?: number; updatedAt?: number }>;
-        list.sort((a, b) => a.name.localeCompare(b.name, "id-ID"));
         setClassCatalog(list);
-        setDisabledClassKeys(Array.from(disabledKeys));
-      } else {
+        setDisabledClassKeys(disabledKeys);
+      })
+      .catch((error) => {
+        if (disposed) return;
+        console.error("EduLock backend class snapshot failed:", error);
         setClassCatalog([]);
         setDisabledClassKeys([]);
-      }
-    });
-    return () => unsub();
+      });
+
+    return () => {
+      disposed = true;
+    };
   }, [schoolId]);
 
   const filteredStudents = useMemo(() => {
@@ -709,22 +748,18 @@ export default function EduLockSchoolAdminPage() {
     };
 
     const map = new Map<string, { key: string; name: string }>();
-    const pushName = (value: unknown) => {
-      const name = String(value || "").trim();
-      if (!name) return;
-      const key = normalizeClassKey(name);
-      if (!key) return;
+    classCatalog.forEach((item) => {
+      const name = String(item?.name || item?.key || "").trim();
+      const key = normalizeClassKey(name || item?.key);
+      if (!name || !key) return;
       if (disabledClassKeys.includes(key)) return;
       if (!map.has(key)) map.set(key, { key, name });
-    };
-
-    classCatalog.forEach((c) => pushName(c.name || c.key));
-    filteredStudents.forEach((s) => pushName((s as any)?.class));
+    });
 
     const list = Array.from(map.values());
     list.sort((a, b) => compareClassNames(a.name, b.name));
     return list;
-  }, [classCatalog, disabledClassKeys, filteredStudents]);
+  }, [classCatalog, disabledClassKeys]);
 
   const classByKey = useMemo(() => {
     const map = new Map<string, { key: string; name: string }>();
@@ -970,51 +1005,6 @@ export default function EduLockSchoolAdminPage() {
     }
   };
 
-  const handleAddClass = async () => {
-    if (!schoolId) return;
-    const name = String(newClassName || "").trim();
-    const key = normalizeClassKey(name);
-    if (!name || !key) {
-      setStatusMessage({ type: "error", text: "Nama kelas tidak valid. Contoh: 7A atau VII-A." });
-      setTimeout(() => setStatusMessage({ type: "", text: "" }), 3500);
-      return;
-    }
-    setLoading(true);
-    try {
-      await callEduLockSecurityApi("POST", {
-        action: "save-class",
-        schoolId,
-        className: name,
-      });
-      setNewClassName("");
-      setStatusMessage({ type: "success", text: `Kelas ${name} berhasil ditambahkan.` });
-      setTimeout(() => setStatusMessage({ type: "", text: "" }), 3000);
-    } catch (e: any) {
-      setStatusMessage({ type: "error", text: `Gagal menambah kelas: ${String(e?.message || e)}` });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDeleteClass = async (key: string, name: string) => {
-    if (!schoolId) return;
-    if (!window.confirm(`Hapus kelas ${name}? Ini tidak menghapus siswa, hanya menghapus daftar kelas.`)) return;
-    setLoading(true);
-    try {
-      await callEduLockSecurityApi("DELETE", {
-        action: "delete-class",
-        schoolId,
-        className: key,
-      });
-      setStatusMessage({ type: "success", text: `Kelas ${name} dihapus.` });
-      setTimeout(() => setStatusMessage({ type: "", text: "" }), 3000);
-    } catch (e: any) {
-      setStatusMessage({ type: "error", text: `Gagal menghapus kelas: ${String(e?.message || e)}` });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSaveWeekdaySchedule = async () => {
     if (!schoolId) return;
     setLoading(true);
@@ -1147,68 +1137,6 @@ export default function EduLockSchoolAdminPage() {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const bstr = evt.target?.result;
-        if (!bstr) return;
-        const workbook = XLSX.read(bstr, { type: "binary" });
-        const wsname = workbook.SheetNames[0];
-        const ws = workbook.Sheets[wsname];
-        const data: any[] = XLSX.utils.sheet_to_json(ws);
-        if (data.length === 0) {
-          window.alert("File Excel kosong!");
-          return;
-        }
-
-        setLoading(true);
-        const payloadRows = data
-          .map((row) => ({
-            nisn: row["NISN"] ? String(row["NISN"]) : "",
-            name: String(row["Nama"] || row["Nama Lengkap"] || ""),
-            class: String(row["Kelas"] || ""),
-          }))
-          .filter((row) => row.nisn && row.name && row.class);
-
-        if (payloadRows.length > 0) {
-          const result = await callAdminStudentApi("POST", {
-            action: "bulk-import",
-            schoolId,
-            rows: payloadRows.map((row) => ({
-              nisn: row.nisn,
-              name: row.name,
-              className: row.class,
-            })),
-          });
-          const count = Number(result?.data?.count || payloadRows.length);
-          setStatusMessage({ type: "success", text: `Berhasil mengimpor ${count} data siswa!` });
-          setTimeout(() => setStatusMessage({ type: "", text: "" }), 3000);
-        } else {
-          window.alert("Tidak ada data valid. Pastikan header: NISN, Nama, Kelas");
-        }
-      } catch (e: any) {
-        setStatusMessage({ type: "error", text: `Gagal import Excel: ${String(e?.message || e)}` });
-      } finally {
-        setLoading(false);
-        e.target.value = "";
-      }
-    };
-    reader.readAsBinaryString(file);
-  };
-
-  const downloadTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet([
-      { NISN: "1234567890", Nama: "Contoh Siswa", Kelas: "XII IPA 1" },
-      { NISN: "0987654321", Nama: "Siswa Kedua", Kelas: "X IPS 2" },
-    ]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Template Siswa");
-    XLSX.writeFile(wb, "Template_Data_Siswa_EduLock.xlsx");
-  };
-
   const handleExportData = () => {
     if (filteredStudents.length === 0) {
       window.alert("Tidak ada data siswa untuk diekspor.");
@@ -1338,32 +1266,6 @@ export default function EduLockSchoolAdminPage() {
       .catch((error: any) => {
         setStatusMessage({ type: "error", text: `Gagal mengupdate status: ${String(error?.message || error)}` });
       });
-  };
-
-  const handleAddStudent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newStudent.nisn || !newStudent.name || !newStudent.class) {
-      window.alert("Mohon lengkapi semua data siswa.");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await callAdminStudentApi("POST", {
-        schoolId,
-        nisn: newStudent.nisn,
-        name: newStudent.name,
-        className: newStudent.class,
-      });
-      setStatusMessage({ type: "success", text: `Siswa ${newStudent.name} berhasil ditambahkan!` });
-      setNewStudent({ nisn: "", name: "", class: "" });
-      setIsAddStudentModalOpen(false);
-      setTimeout(() => setStatusMessage({ type: "", text: "" }), 3000);
-    } catch (error: any) {
-      setStatusMessage({ type: "error", text: `Gagal menambah siswa: ${String(error?.message || error)}` });
-    } finally {
-      setLoading(false);
-    }
   };
 
   const handleSaveConfig = async () => {
@@ -2133,33 +2035,6 @@ export default function EduLockSchoolAdminPage() {
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     <span className="text-sm text-slate-400 mr-2 hidden lg:block">Total: {filteredStudents.length} Siswa</span>
 
-                    <button type="button" onClick={downloadTemplate} className="btn-outline px-3 py-2 text-sm" title="Download template import siswa">
-                      <FileSpreadsheet className="w-4 h-4" />
-                      <span className="hidden sm:inline">Template</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => importFileInputRef.current?.click()}
-                      disabled={loading}
-                      className="btn-outline px-3 py-2 text-sm"
-                      title="Import data siswa dari Excel"
-                    >
-                      <Upload className="w-4 h-4" />
-                      <span className="hidden sm:inline">Import</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsAddStudentModalOpen(true)}
-                      disabled={loading}
-                      className="btn-primary px-3 py-2 text-sm"
-                      title="Tambah siswa manual"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span className="hidden sm:inline">Tambah Siswa</span>
-                    </button>
-
                     <button onClick={handleExportData} className="btn-outline px-3 py-2 text-sm" title="Export Data Siswa ke Excel">
                       <Download className="w-4 h-4" />
                       <span className="hidden sm:inline">Export</span>
@@ -2189,13 +2064,6 @@ export default function EduLockSchoolAdminPage() {
                 </div>
 
                 <div className="px-6 py-4 border-b border-white/10 bg-white/5">
-                  <input
-                    ref={importFileInputRef}
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                     <div>
                       <label className="label">Filter Kelas</label>
@@ -2692,62 +2560,6 @@ export default function EduLockSchoolAdminPage() {
         </main>
       </div>
 
-      {isAddStudentModalOpen && (
-        <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-surface w-full max-w-lg p-6">
-            <div className="flex items-center justify-between">
-              <div className="text-lg font-semibold text-white">Tambah Siswa</div>
-              <button onClick={() => setIsAddStudentModalOpen(false)} className="text-slate-300 hover:text-white">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddStudent} className="mt-4 space-y-4">
-              <div>
-                <label className="label">NISN</label>
-                <input value={newStudent.nisn} onChange={(e) => setNewStudent((s) => ({ ...s, nisn: e.target.value }))} className="input" />
-              </div>
-              <div>
-                <label className="label">Nama</label>
-                <input value={newStudent.name} onChange={(e) => setNewStudent((s) => ({ ...s, name: e.target.value }))} className="input" />
-              </div>
-              <div>
-                <label className="label">Kelas</label>
-                {classCatalogComputed.length > 0 && (
-                  <select
-                    className="input mb-2"
-                    value={(() => {
-                      const key = normalizeClassKey(newStudent.class);
-                      return key && classByKey.has(key) ? key : "";
-                    })()}
-                    onChange={(e) => {
-                      const key = e.target.value;
-                      const name = key && classByKey.has(key) ? String(classByKey.get(key)?.name || "") : "";
-                      setNewStudent((s) => ({ ...s, class: name }));
-                    }}
-                  >
-                    <option value="">Pilih dari Data Kelas</option>
-                    {classCatalogComputed.map((c) => (
-                      <option key={c.key} value={c.key}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <input value={newStudent.class} onChange={(e) => setNewStudent((s) => ({ ...s, class: e.target.value }))} className="input" placeholder="VII-A" />
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button type="submit" disabled={loading} className="btn-primary w-full">
-                  {loading ? "Memproses..." : "Simpan"}
-                </button>
-                <button type="button" disabled={loading} onClick={() => setIsAddStudentModalOpen(false)} className="btn-outline w-full">
-                  Batal
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

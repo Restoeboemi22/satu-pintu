@@ -1,0 +1,3 @@
+<resources>
+    <string name="accessibility_service_description">EduLock menggunakan Layanan Aksesibilitas untuk perlindungan perangkat sekolah: mendeteksi saat halaman pengaturan terkait EduLock dibuka (mis. Uninstall/Force Stop) lalu mencegah penghapusan atau penonaktifan tanpa izin admin.</string>
+</resources>

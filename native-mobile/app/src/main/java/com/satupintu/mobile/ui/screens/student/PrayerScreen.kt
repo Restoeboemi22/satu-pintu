@@ -1,4 +1,4 @@
-﻿package com.satupintu.mobile.ui.screens.student
+package com.satupintu.mobile.ui.screens.student
 
 import android.Manifest
 import android.content.Context
@@ -12,13 +12,18 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -33,6 +38,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -50,6 +58,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
@@ -60,13 +69,39 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import com.satupintu.mobile.util.SecurityUtils
+import com.satupintu.mobile.util.formatIndonesianShortDay
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import java.text.SimpleDateFormat
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
 private data class MushollaLocation(val lat: Double, val lng: Double, val radiusMeters: Double)
+private data class PrayerHistoryRecord(
+    val id: String,
+    val studentId: String,
+    val nisn: String,
+    val schoolId: String,
+    val date: Long,
+    val status: String
+)
+private data class DailyPrayerSummary(
+    val day: Int,
+    val dayName: String,
+    val statusCode: String,
+    val dateKey: String,
+    val submittedAt: Long?
+)
+private data class MonthlyPrayerSummary(
+    val summaries: List<DailyPrayerSummary>,
+    val totalPray: Int,
+    val totalNotPray: Int,
+    val totalPermit: Int,
+    val totalHalangan: Int
+)
 
 private fun toYmd(cal: Calendar): String {
     val y = cal.get(Calendar.YEAR)
@@ -95,6 +130,111 @@ private fun isNonMuslim(religionRaw: String): Boolean {
     return false
 }
 
+private fun isPrayerEffectiveDay(calendar: Calendar, schedules: Map<String, Boolean>, holidays: Set<String>): Boolean {
+    val todayStart = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val targetStart = calendar.clone() as Calendar
+    targetStart.set(Calendar.HOUR_OF_DAY, 0)
+    targetStart.set(Calendar.MINUTE, 0)
+    targetStart.set(Calendar.SECOND, 0)
+    targetStart.set(Calendar.MILLISECOND, 0)
+    if (targetStart.timeInMillis > todayStart) return false
+    if (calendar.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) return false
+    if (holidays.contains(toYmd(calendar))) return false
+
+    val dayKey = calendar.get(Calendar.DAY_OF_WEEK).toString()
+    if (schedules.isEmpty()) return true
+    val isHoliday = schedules[dayKey] ?: true
+    return !isHoliday
+}
+
+private fun mapPrayerStatusToCode(status: String?): String {
+    return when (status?.trim()?.uppercase(Locale.ROOT)) {
+        "PRAY" -> "S"
+        "PERMIT" -> "I"
+        "HALANGAN" -> "H"
+        "NOT_PRAY" -> "TS"
+        else -> "TS"
+    }
+}
+
+private fun calculatePrayerMonthlySummary(
+    history: List<PrayerHistoryRecord>,
+    schedules: Map<String, Boolean>,
+    holidays: Set<String>
+): MonthlyPrayerSummary {
+    val workingCalendar = Calendar.getInstance()
+    val currentMonth = workingCalendar.get(Calendar.MONTH)
+    val currentYear = workingCalendar.get(Calendar.YEAR)
+    workingCalendar.set(Calendar.YEAR, currentYear)
+    workingCalendar.set(Calendar.MONTH, currentMonth)
+    workingCalendar.set(Calendar.DAY_OF_MONTH, 1)
+
+    val daysInMonth = workingCalendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+    val summaries = mutableListOf<DailyPrayerSummary>()
+    var totalPray = 0
+    var totalNotPray = 0
+    var totalPermit = 0
+    var totalHalangan = 0
+
+    val latestByDate = history
+        .filter {
+            val cal = Calendar.getInstance().apply { timeInMillis = it.date }
+            cal.get(Calendar.YEAR) == currentYear && cal.get(Calendar.MONTH) == currentMonth
+        }
+        .groupBy { toYmd(Calendar.getInstance().apply { timeInMillis = it.date }) }
+        .mapValues { (_, records) -> records.maxByOrNull { it.date } }
+
+    for (day in 1..daysInMonth) {
+        workingCalendar.set(Calendar.DAY_OF_MONTH, day)
+        workingCalendar.set(Calendar.HOUR_OF_DAY, 0)
+        workingCalendar.set(Calendar.MINUTE, 0)
+        workingCalendar.set(Calendar.SECOND, 0)
+        workingCalendar.set(Calendar.MILLISECOND, 0)
+
+        val dateKey = toYmd(workingCalendar)
+        val dayName = formatIndonesianShortDay(workingCalendar.time)
+        if (!isPrayerEffectiveDay(workingCalendar, schedules, holidays)) {
+            summaries += DailyPrayerSummary(
+                day = day,
+                dayName = dayName,
+                statusCode = "-",
+                dateKey = dateKey,
+                submittedAt = null
+            )
+            continue
+        }
+
+        val latestRecord = latestByDate[dateKey]
+        val code = mapPrayerStatusToCode(latestRecord?.status)
+        when (code) {
+            "S" -> totalPray += 1
+            "I" -> totalPermit += 1
+            "H" -> totalHalangan += 1
+            "TS" -> totalNotPray += 1
+        }
+        summaries += DailyPrayerSummary(
+            day = day,
+            dayName = dayName,
+            statusCode = code,
+            dateKey = dateKey,
+            submittedAt = latestRecord?.date
+        )
+    }
+
+    return MonthlyPrayerSummary(
+        summaries = summaries,
+        totalPray = totalPray,
+        totalNotPray = totalNotPray,
+        totalPermit = totalPermit,
+        totalHalangan = totalHalangan
+    )
+}
+
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 fun PrayerScreen(
@@ -121,6 +261,9 @@ fun PrayerScreen(
     var locationAccuracy by remember { mutableStateOf<Float?>(null) }
     var locationProvider by remember { mutableStateOf<String?>(null) }
     var mockLocationDetected by remember { mutableStateOf(false) }
+    var selectedTabIndex by remember { mutableStateOf(0) }
+    var prayerHistoryLoading by remember { mutableStateOf(true) }
+    var prayerHistoryRaw by remember { mutableStateOf<List<PrayerHistoryRecord>>(emptyList()) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -149,6 +292,7 @@ fun PrayerScreen(
         var legacyHolidaysListener: ValueEventListener? = null
         var scopedHolidaysListener: ValueEventListener? = null
         var studentProfileListener: ValueEventListener? = null
+        var prayerHistoryListener: ValueEventListener? = null
 
         var legacyMusholla: MushollaLocation? = null
         var scopedMusholla: MushollaLocation? = null
@@ -297,6 +441,40 @@ fun PrayerScreen(
         db.getReference("master_students").addListenerForSingleValueEvent(studentProfileListener as ValueEventListener)
         db.getReference("students").addListenerForSingleValueEvent(studentProfileListener as ValueEventListener)
 
+        prayerHistoryLoading = true
+        prayerHistoryListener = object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val filtered = snapshot.children.mapNotNull { child ->
+                    val recordStudentId = child.child("studentId").getValue(String::class.java)?.trim().orEmpty()
+                    val recordNisn = child.child("nisn").getValue(String::class.java)?.trim().orEmpty()
+                    val recordSchoolId = child.child("schoolId").getValue(String::class.java)?.trim()?.lowercase().orEmpty()
+                    val submittedAt = child.child("date").getValue(Long::class.java)
+                        ?: child.child("createdAt").getValue(Long::class.java)
+                        ?: 0L
+                    val status = child.child("status").getValue(String::class.java)?.trim().orEmpty()
+                    val matchesStudent = identityCandidates.contains(recordStudentId) || identityCandidates.contains(recordNisn)
+                    if (!matchesStudent || submittedAt <= 0L) return@mapNotNull null
+                    PrayerHistoryRecord(
+                        id = child.key.orEmpty(),
+                        studentId = recordStudentId,
+                        nisn = recordNisn,
+                        schoolId = recordSchoolId,
+                        date = submittedAt,
+                        status = status
+                    )
+                }.sortedByDescending { it.date }
+
+                prayerHistoryRaw = filtered
+                prayerHistoryLoading = false
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                prayerHistoryRaw = emptyList()
+                prayerHistoryLoading = false
+            }
+        }
+        db.getReference("prayer_attendance").addValueEventListener(prayerHistoryListener as ValueEventListener)
+
         legacyMushollaListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 if (!snapshot.exists()) {
@@ -371,6 +549,9 @@ fun PrayerScreen(
                 db.getReference("school_settings").child(resolvedSchoolId).child("attendance").child("holidays")
                     .removeEventListener(scopedHolidaysListener as ValueEventListener)
             }
+            if (prayerHistoryListener != null) {
+                db.getReference("prayer_attendance").removeEventListener(prayerHistoryListener as ValueEventListener)
+            }
         }
     }
 
@@ -395,6 +576,14 @@ fun PrayerScreen(
         !mockLocationDetected &&
         (distanceMeters ?: 0.0) <= musholla.radiusMeters
     val canSubmit = canAttemptByRule && canAttemptByLocation && deviceTimeTrusted && !isSubmitting
+    val prayerHistory = remember(prayerHistoryRaw, resolvedSchoolId) {
+        prayerHistoryRaw.filter { record ->
+            resolvedSchoolId.isBlank() || record.schoolId.isBlank() || record.schoolId == resolvedSchoolId
+        }.sortedByDescending { it.date }
+    }
+    val prayerMonthlySummary = remember(prayerHistory, schedules, holidays) {
+        calculatePrayerMonthlySummary(prayerHistory, schedules, holidays)
+    }
 
     fun checkLocation() {
         if (!permissionGranted) {
@@ -551,121 +740,166 @@ fun PrayerScreen(
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
+                    .fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = cardShape,
-                    colors = CardDefaults.cardColors(containerColor = cardBg),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, cardBorder)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Aturan Hari", fontWeight = FontWeight.Bold, color = Color.White)
-                        Text("Hari efektif: ${if (!isHolidayBySchedule) "Ya" else "Tidak"}", color = Color.White.copy(alpha = 0.9f))
-                        Text("Tanggal merah: ${if (!isHolidayByDate) "Tidak" else "Ya"}", color = Color.White.copy(alpha = 0.9f))
-                        Text(
-                            "Aturan sholat: ${if (nonMuslim) "Tidak berlaku (Non Muslim)" else "Berlaku"}",
-                            color = Color.White.copy(alpha = 0.9f)
-                        )
-                    }
-                }
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = cardShape,
-                    colors = CardDefaults.cardColors(containerColor = cardBg),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, cardBorder)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Lokasi Musholla", fontWeight = FontWeight.Bold, color = Color.White)
-                        Text(
-                            "Target: %.6f, %.6f â€¢ Radius %.0fm".format(musholla.lat, musholla.lng, musholla.radiusMeters),
-                            color = Color.White.copy(alpha = 0.9f)
-                        )
-                        Text(
-                            text = "Lokasi Anda: " + (coords?.let { "%.6f, %.6f".format(it.first, it.second) } ?: "-"),
-                            color = Color.White.copy(alpha = 0.9f)
-                        )
-                        Text(
-                            text = "Jarak: " + (distanceMeters?.let { "%.0fm".format(it) } ?: "-"),
-                            color = Color.White.copy(alpha = 0.9f)
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Button(
-                            onClick = { checkLocation() },
-                            enabled = !isChecking,
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
-                            shape = RoundedCornerShape(18.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color.White.copy(alpha = 0.16f),
-                                contentColor = Color.White
-                            )
+                TabRow(
+                    selectedTabIndex = selectedTabIndex,
+                    containerColor = Color.Transparent,
+                    contentColor = Color.White,
+                    indicator = { tabPositions ->
+                        val currentTab = tabPositions[selectedTabIndex]
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .wrapContentSize(Alignment.BottomStart)
                         ) {
-                            if (isChecking) {
-                                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Default.LocationOn, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Cek Lokasi Sekarang")
-                            }
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = currentTab.left)
+                                    .width(currentTab.width)
+                                    .height(3.dp)
+                                    .background(Color.White, RoundedCornerShape(999.dp))
+                            )
                         }
                     }
-                }
-
-                Button(
-                    onClick = { submitPrayer() },
-                    enabled = canSubmit,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF0B1F33).copy(alpha = 0.55f),
-                        contentColor = Color.White,
-                        disabledContainerColor = Color(0xFF0B1F33).copy(alpha = 0.25f),
-                        disabledContentColor = Color.White.copy(alpha = 0.55f)
-                    )
                 ) {
-                    Text(if (isSubmitting) "Memproses..." else "Presensi Sholat")
-                }
-
-                if (!canAttemptByRule) {
-                    val reason = when {
-                        nonMuslim -> "Presensi sholat tidak berlaku untuk siswa non muslim."
-                        isHolidayBySchedule -> "Hari ini non-efektif (jadwal libur)."
-                        isHolidayByDate -> "Hari ini libur (tanggal merah)."
-                        else -> "Tidak bisa presensi."
-                    }
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = cardShape,
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF2A1A1A).copy(alpha = 0.45f)),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB4A9).copy(alpha = 0.35f))
-                    ) {
-                        Text(
-                            text = reason,
-                            color = Color(0xFFFFB4A9),
-                            style = MaterialTheme.typography.bodySmall,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(12.dp)
+                    listOf("Presensi", "Riwayat").forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTabIndex == index,
+                            onClick = { selectedTabIndex = index },
+                            selectedContentColor = Color.White,
+                            unselectedContentColor = Color.White.copy(alpha = 0.7f),
+                            text = { Text(title) }
                         )
                     }
-                } else if (!canAttemptByLocation) {
-                    Text(
-                        if (mockLocationDetected) {
-                            "Catatan: lokasi palsu terdeteksi sehingga presensi diblokir."
-                        } else {
-                            "Catatan: presensi aktif jika berada di area musholla."
-                        },
-                        color = Color.White.copy(alpha = 0.75f),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                } else if (!deviceTimeTrusted) {
-                    Text(
-                        "Catatan: aktifkan tanggal otomatis dan zona waktu otomatis sebelum presensi.",
-                        color = Color.White.copy(alpha = 0.75f),
-                        style = MaterialTheme.typography.bodySmall
+                }
+
+                when (selectedTabIndex) {
+                    0 -> Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = cardShape,
+                            colors = CardDefaults.cardColors(containerColor = cardBg),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, cardBorder)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Aturan Hari", fontWeight = FontWeight.Bold, color = Color.White)
+                                Text("Hari efektif: ${if (!isHolidayBySchedule) "Ya" else "Tidak"}", color = Color.White.copy(alpha = 0.9f))
+                                Text("Tanggal merah: ${if (!isHolidayByDate) "Tidak" else "Ya"}", color = Color.White.copy(alpha = 0.9f))
+                                Text(
+                                    "Aturan sholat: ${if (nonMuslim) "Tidak berlaku (Non Muslim)" else "Berlaku"}",
+                                    color = Color.White.copy(alpha = 0.9f)
+                                )
+                            }
+                        }
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = cardShape,
+                            colors = CardDefaults.cardColors(containerColor = cardBg),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, cardBorder)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Lokasi Musholla", fontWeight = FontWeight.Bold, color = Color.White)
+                                Text(
+                                    "Target: %.6f, %.6f | Radius %.0fm".format(musholla.lat, musholla.lng, musholla.radiusMeters),
+                                    color = Color.White.copy(alpha = 0.9f)
+                                )
+                                Text(
+                                    text = "Lokasi Anda: " + (coords?.let { "%.6f, %.6f".format(it.first, it.second) } ?: "-"),
+                                    color = Color.White.copy(alpha = 0.9f)
+                                )
+                                Text(
+                                    text = "Jarak: " + (distanceMeters?.let { "%.0fm".format(it) } ?: "-"),
+                                    color = Color.White.copy(alpha = 0.9f)
+                                )
+
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Button(
+                                    onClick = { checkLocation() },
+                                    enabled = !isChecking,
+                                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                                    shape = RoundedCornerShape(18.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color.White.copy(alpha = 0.16f),
+                                        contentColor = Color.White
+                                    )
+                                ) {
+                                    if (isChecking) {
+                                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                                    } else {
+                                        Icon(Icons.Default.LocationOn, contentDescription = null)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Cek Lokasi Sekarang")
+                                    }
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick = { submitPrayer() },
+                            enabled = canSubmit,
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF0B1F33).copy(alpha = 0.55f),
+                                contentColor = Color.White,
+                                disabledContainerColor = Color(0xFF0B1F33).copy(alpha = 0.25f),
+                                disabledContentColor = Color.White.copy(alpha = 0.55f)
+                            )
+                        ) {
+                            Text(if (isSubmitting) "Memproses..." else "Presensi Sholat")
+                        }
+
+                        if (!canAttemptByRule) {
+                            val reason = when {
+                                nonMuslim -> "Presensi sholat tidak berlaku untuk siswa non muslim."
+                                isHolidayBySchedule -> "Hari ini non-efektif (jadwal libur)."
+                                isHolidayByDate -> "Hari ini libur (tanggal merah)."
+                                else -> "Tidak bisa presensi."
+                            }
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = cardShape,
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF2A1A1A).copy(alpha = 0.45f)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB4A9).copy(alpha = 0.35f))
+                            ) {
+                                Text(
+                                    text = reason,
+                                    color = Color(0xFFFFB4A9),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
+                        } else if (!canAttemptByLocation) {
+                            Text(
+                                if (mockLocationDetected) {
+                                    "Catatan: lokasi palsu terdeteksi sehingga presensi diblokir."
+                                } else {
+                                    "Catatan: presensi aktif jika berada di area musholla."
+                                },
+                                color = Color.White.copy(alpha = 0.75f),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        } else if (!deviceTimeTrusted) {
+                            Text(
+                                "Catatan: aktifkan tanggal otomatis dan zona waktu otomatis sebelum presensi.",
+                                color = Color.White.copy(alpha = 0.75f),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+
+                    else -> PrayerHistoryContent(
+                        isLoading = prayerHistoryLoading,
+                        summary = prayerMonthlySummary
                     )
                 }
             }
@@ -673,3 +907,154 @@ fun PrayerScreen(
     }
 }
 
+@Composable
+private fun PrayerHistoryContent(
+    isLoading: Boolean,
+    summary: MonthlyPrayerSummary
+) {
+    val monthYearFormatter = remember { SimpleDateFormat("MMMM yyyy", Locale("id", "ID")) }
+    val dateFormatter = remember { SimpleDateFormat("dd/MM/yyyy", Locale("id", "ID")) }
+
+    fun chipColor(statusCode: String): Color {
+        return when (statusCode) {
+            "S" -> Color(0xFF86EFAC)
+            "TS" -> Color(0xFFFFB4A9)
+            "I" -> Color(0xFFFDE68A)
+            "H" -> Color(0xFFE9B8FF)
+            else -> Color.White.copy(alpha = 0.45f)
+        }
+    }
+
+    fun chipBackground(statusCode: String): Color {
+        return when (statusCode) {
+            "S" -> Color(0xFF16A34A).copy(alpha = 0.18f)
+            "TS" -> Color(0xFFEF4444).copy(alpha = 0.18f)
+            "I" -> Color(0xFFF59E0B).copy(alpha = 0.18f)
+            "H" -> Color(0xFF8E24AA).copy(alpha = 0.18f)
+            else -> Color.Transparent
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Color.White)
+            }
+            return
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0B1F33).copy(alpha = 0.22f)),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.14f))
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Rekap Bulanan ${monthYearFormatter.format(Date())}",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("S", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = Color(0xFF86EFAC))
+                        Text("${summary.totalPray}", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("TS", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = Color(0xFFFFB4A9))
+                        Text("${summary.totalNotPray}", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("I", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = Color(0xFFFDE68A))
+                        Text("${summary.totalPermit}", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("H", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = Color(0xFFE9B8FF))
+                        Text("${summary.totalHalangan}", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    }
+                }
+            }
+        }
+
+        Text(
+            text = "Keterangan: S = Sholat, TS = Tidak Sholat, I = Izin, H = Halangan",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.78f),
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F7BFF))
+        ) {
+            Row(
+                modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("No", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.weight(0.5f))
+                Text("Hari/Tgl", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.weight(1.5f))
+                Text("Jam", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.weight(1f))
+                Text("Ket", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.weight(1.2f))
+            }
+        }
+
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+            itemsIndexed(summary.summaries) { index, daily ->
+                val calendar = Calendar.getInstance().apply {
+                    val parts = daily.dateKey.split("-")
+                    set(Calendar.YEAR, parts.getOrNull(0)?.toIntOrNull() ?: get(Calendar.YEAR))
+                    set(Calendar.MONTH, (parts.getOrNull(1)?.toIntOrNull() ?: 1) - 1)
+                    set(Calendar.DAY_OF_MONTH, parts.getOrNull(2)?.toIntOrNull() ?: 1)
+                }
+                val jam = daily.submittedAt?.let { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it)) } ?: "-"
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0B1F33).copy(alpha = 0.18f)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("${index + 1}", style = MaterialTheme.typography.bodyMedium, color = Color.White, modifier = Modifier.weight(0.5f))
+                        Column(modifier = Modifier.weight(1.5f)) {
+                            Text(daily.dayName, style = MaterialTheme.typography.bodyMedium, color = Color.White, maxLines = 1)
+                            Text(dateFormatter.format(calendar.time), style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.72f), maxLines = 1)
+                        }
+                        Text(jam, style = MaterialTheme.typography.bodyMedium, color = Color.White, modifier = Modifier.weight(1f))
+                        Surface(
+                            color = chipBackground(daily.statusCode),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.weight(1.2f)
+                        ) {
+                            Text(
+                                text = if (daily.statusCode == "-") "-" else daily.statusCode,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                color = chipColor(daily.statusCode),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,4 +1,4 @@
-﻿package com.satupintu.mobile.ui.screens.teacher
+package com.satupintu.mobile.ui.screens.teacher
 
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -492,7 +492,7 @@ private fun MonitoringRowCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(row.student.name, color = Color.White, fontWeight = FontWeight.Bold)
                     Text(
-                        "${row.student.className} â€¢ ${row.student.nisn}",
+                        "${row.student.className} | ${row.student.nisn}",
                         color = SevenHabitsTextSecondary,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -527,7 +527,7 @@ private fun MonitoringRowCard(
                         ) {
                             Text(habitScore.label, color = Color.White, style = MaterialTheme.typography.bodySmall)
                             Text(
-                                "${habitScore.checkedDays}/${metrics.validWeekDays} hari â€¢ ${formatPercent(habitScore.score)}",
+                                "${habitScore.checkedDays}/${metrics.validWeekDays} hari | ${formatPercent(habitScore.score)}",
                                 color = SevenHabitsTextSecondary,
                                 style = MaterialTheme.typography.bodySmall
                             )
@@ -857,7 +857,7 @@ private fun GradeRowCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(row.student.name, color = Color.White, fontWeight = FontWeight.Bold)
                     Text(
-                        "${row.student.className} â€¢ ${row.student.nisn}",
+                        "${row.student.className} | ${row.student.nisn}",
                         color = SevenHabitsTextSecondary,
                         style = MaterialTheme.typography.bodySmall
                     )

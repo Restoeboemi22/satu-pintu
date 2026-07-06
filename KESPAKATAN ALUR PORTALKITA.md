@@ -93,8 +93,10 @@ Aturan utamanya:
 Penegasan penggunaan:
 
 - akun kepala sekolah yang dibuat oleh super admin adalah akun akses kepala sekolah untuk login di **APK GAS**,
-- alur APK GAS untuk kepala sekolah ini **masih belum kita bangun** pada tahap sekarang,
-- karena itu, akun kepala sekolah sudah disiapkan sebagai data induk dan akses masa depan, meskipun modul APK-nya belum selesai diimplementasikan.
+- alur APK GAS untuk kepala sekolah sudah aktif di repo `native-mobile` dan dipakai untuk login ke varian `GAS Kepala Sekolah`,
+- login kepala sekolah wajib tenant-aware: input `Kode Sekolah / NPSN` harus dipetakan ke tenant sekolah yang sama, dan akun principal hanya boleh lolos bila `schoolId`/`npsn` cocok dengan sekolah yang dipilih,
+- data akun kepala sekolah yang dibuat super admin di `principal_accounts` harus tetap sinkron dengan identitas sekolah induk, termasuk `schoolId`, `schoolName`, dan `npsn`,
+- bila user login memakai `NPSN`, maka data sekolah induk dan akun principal tidak boleh membiarkan `npsn` kosong karena itu akan memutus resolusi tenant di APK.
 
 ### 3.4 Pegangan Teknis Android Native
 
@@ -171,7 +173,7 @@ Catatan domain:
 
 - akun ini disiapkan untuk akses kepala sekolah pada **APK GAS**,
 - akun ini bukan akun login admin sekolah untuk web,
-- implementasi login APK GAS kepala sekolah masih menjadi pekerjaan lanjutan.
+- implementasi login APK GAS kepala sekolah sudah aktif dan harus selalu menjaga isolasi tenant berbasis `schoolId`/`NPSN`.
 
 Node data utama:
 
@@ -479,6 +481,55 @@ Prinsip UI yang disepakati:
 - halaman `DATABASE` super admin harus menegaskan fungsi data induk pusat,
 - visual V1 menjadi acuan bila terjadi perbedaan struktur.
 
+Tambahan kesepakatan UI untuk `APK GAS Kepala Sekolah`:
+
+- 6 menu utama dashboard kepala sekolah ditampilkan dalam grid `2 kolom`, bukan list vertikal satu kolom,
+- setiap card menu utama harus memiliki identitas warna yang berbeda agar domain monitoring cepat dikenali,
+- perubahan layout menu kepala sekolah harus tetap menjaga keterbacaan di layar HP dan tidak mengorbankan konteks judul/subjudul menu,
+- `Ringkasan Eksekutif` kepala sekolah harus ikut memuat kartu `7 KAIH` yang mengambil data real-time dari sumber monitoring `7 KAIH` yang sama,
+- string UI principal harus memakai separator ASCII aman seperti ` | ` untuk menghindari bug mojibake/encoding seperti `aEc` atau `â€¢` di perangkat.
+
+Tambahan aturan umum untuk APK Android:
+
+- string UI yang tampil ke user pada varian `GAS Siswa`, `GAS Guru`, dan `GAS Kepala Sekolah` harus menghindari separator hasil encoding rawan seperti `â€¢`,
+- bila perlu separator antar metadata singkat, pakai format ASCII aman seperti ` | ` atau list `-` agar stabil saat dirender di perangkat Android.
+- untuk wrapper `EduLock Admin` Android, URL WebView wajib selalu diarahkan ke portal web aktif proyek ini dan tidak boleh tertinggal ke domain deployment lama seperti `sc-app-bk-2025.web.app`.
+- source build Android `EduLock` yang aktif harus berada di workspace utama `D:\Satu Pintu\edulock-mobile`; folder referensi lama hanya boleh dipakai untuk audit atau pembanding, bukan sebagai sumber build utama jangka panjang.
+
+Tambahan aturan integrasi data induk:
+
+- menu `DATABASE` adalah induk semua data user lintas modul.
+- data akun siswa untuk `GAS` APK dan `EduLock` APK harus berasal dari satu sumber yang sama, yaitu data induk pada `DATABASE`.
+- halaman web `EduLock Admin`, khususnya tab `Data Siswa`, wajib membaca scope tenant yang sama dengan sesi portal admin agar tidak terjadi kondisi `DATABASE` berisi tetapi `EduLock` kosong.
+- bila ada data realtime atau metadata khusus `EduLock`, data tersebut hanya menjadi lapisan tambahan di atas data induk siswa, bukan pengganti sumber utama akun.
+- bila halaman `EduLock Admin` perlu membaca data induk `GAS` langsung dari client, page tersebut wajib membuka sesi baca `GAS` terlebih dahulu dan tidak boleh mengandalkan subscription diam tanpa autentikasi yang jelas.
+- halaman `EduLock Admin > Data Siswa` tidak boleh menyediakan fitur `Template`, `Import`, atau `Tambah Siswa`; input data siswa hanya dilakukan dari menu `DATABASE`.
+
+Tambahan aturan UI untuk modul guru:
+
+- kolom status `PET` pada layar `Data Siswa` harus memakai chip yang kontras terhadap background tabel agar label `-`, `Mati`, `Sakit`, dan `Sehat` tetap terbaca jelas di perangkat.
+- tabel pada `Monitoring Kehadiran` dan `Rekapitulasi Kehadiran` harus mengikuti treatment visual tabel `Presensi Sholat`, termasuk tanpa elevasi/card haze tambahan yang menimbulkan efek kotak putih samar.
+- pada halaman `Pengaturan Sistem` admin sekolah di web, tab atau card `Akun Admin` tidak perlu ditampilkan kembali bila alur `ganti password saat login pertama` sudah aktif; dashboard tidak boleh menyediakan form ubah password lokal yang menduplikasi jalur login satu pintu.
+- pada menu `Tools` siswa, card penjelasan bawah `Segera Hadir` tidak perlu dipertahankan; cukup tampilkan katalog tools yang benar-benar ada.
+- `Kamus Bahasa Inggris` dan `Kamus Bahasa Jawa` di APK siswa tidak boleh lagi berbentuk daftar kata statis jika panduan referensi root sudah menetapkan versi pencarian online; implementasi harus mengikuti referensi root:
+  - `panduan-kamus-bahasa-inggris-android.md`
+  - `panduan-kamus-bahasa-jawa-android.md`
+- `Kamus Bahasa Inggris` harus mendukung dua arah:
+  - `Inggris -> Indonesia`: `dictionaryapi.dev` untuk definisi + `MyMemory` untuk arti Indonesia
+  - `Indonesia -> Inggris`: `MyMemory` untuk terjemahan Inggris, lalu bila memungkinkan diperkaya lagi dengan definisi `dictionaryapi.dev`
+- `Kamus Bahasa Jawa` memakai `MyMemory` untuk terjemahan dua arah dan transliterasi `Hanacaraka` untuk tampilan aksara Jawa.
+- Untuk `Kamus Bahasa Jawa`, kode bahasa online harus memakai locale yang valid di layanan terjemahan:
+  - `Indonesia -> Jawa`: `id-ID|jv-ID`
+  - `Jawa -> Indonesia`: `jv-ID|id-ID`
+- Hasil mentah error dari layanan online tidak boleh ditampilkan sebagai hasil terjemahan pengguna; jika API mengembalikan pesan error, UI harus memunculkan status gagal yang jelas, bukan meneruskan teks error itu ke kartu hasil atau transliterasi aksara.
+- Untuk frasa pendek di `Kamus Bahasa Jawa`, UI hasil sebaiknya menampilkan rincian aksara per kata agar lebih membantu pemahaman siswa, bukan hanya satu blok aksara utuh.
+- Untuk APK `GAS Siswa`, sesi login yang sudah berhasil harus dipertahankan di penyimpanan lokal dan dipakai kembali saat aplikasi dibuka ulang. Menekan `Home`, keluar dari recent apps, atau membuka ulang aplikasi tidak boleh melempar siswa kembali ke halaman login selama:
+  - sesi lokal masih valid,
+  - boundary Firebase masih sesuai,
+  - tenant sekolah masih aktif,
+  - user belum melakukan logout eksplisit.
+- Setiap perubahan perilaku sesi/login yang berdampak ke proses instal ulang atau update APK siswa wajib diikuti kenaikan `versionCode` dan build ulang release agar pengujian di perangkat tidak tertukar dengan APK lama.
+
 ## 10. Implikasi Implementasi
 
 Saat membangun fitur baru, aturan berikut wajib diikuti:
@@ -496,9 +547,21 @@ Ringkasan paling penting:
 - `Super Admin` = pusat data induk semua sekolah
 - `Admin Sekolah` = pengelola operasional sekolah masing-masing
 - `Admin Sekolah` login melalui web PortalKita
-- `Kepala Sekolah` disiapkan untuk login ke APK GAS yang masih belum dibangun
+- `Kepala Sekolah` login melalui APK GAS Kepala Sekolah dengan tenant sekolah yang tervalidasi
 - `PortalKita` = shell utama yang mengikat `DATABASE`, `GAS`, `EduLock`, serta modul konteks role aktif
 - menu konteks aktif saat ini adalah `Status Layanan Sekolah` untuk `super admin` dan `Lentera Digital` untuk `admin sekolah`
 - sekolah harus dibuat dulu, baru admin sekolah dan kepala sekolah bisa diatur
 
 Dokumen ini menjadi acuan tetap selama pengembangan berikutnya kecuali Anda memberi revisi baru secara eksplisit.
+
+Tambahan aturan sinkronisasi `DATABASE` dan `EduLock`:
+
+- pembacaan data induk siswa `master_students` pada workspace `EduLock` harus mengikuti pola yang sama dengan halaman `DATABASE` yang sudah terbukti stabil,
+- bila node `master_students` aktif belum memiliki index `schoolId`, query tenant-aware di `EduLock` wajib memakai baca node penuh lalu filter `schoolId` secara lokal; jangan kembali memakai query RTDB ber-index yang sudah terbukti gagal di project aktif.
+- untuk halaman `EduLock Admin`, pembacaan data induk `DATABASE` diutamakan lewat route backend berbasis service account (`/api/admin/students`) dan tidak mengandalkan akses langsung browser ke RTDB `GAS`.
+- halaman `EduLock Admin > Manajemen Kelas` wajib menjadi mirror read-only dari registry kelas induk `DATABASE/master_classes`; mutasi kelas tidak boleh lagi lewat route `edulock/security`,
+- daftar dan filter kelas di workspace `EduLock` harus dibangun dari katalog kelas induk `master_classes`, bukan fallback dari `master_students.class`.
+- semua konfigurasi realtime `EduLock` yang diubah admin web wajib memakai sumber tenant yang sama dengan APK siswa, yaitu `schools/{schoolId}/...`; jangan kembali memakai node global legacy `school_config` untuk fitur multi-tenant,
+- perubahan admin yang menyasar device/sesi siswa (`reset device`, pencabutan izin, kode akses, mode proteksi/libur) harus dirancang agar berdampak langsung ke APK siswa aktif tanpa menunggu login ulang,
+- `active_codes` EduLock wajib divalidasi dengan boundary `schoolId` agar kode akses tidak bisa dipakai lintas tenant/sekolah.
+- pada halaman admin web yang memakai tabel aksi padat, kolom `Aksi` tidak boleh dipaksa satu baris hingga tombol terpotong; gunakan proporsi card yang cukup, `overflow-x-auto`, dan tombol yang bisa `wrap` bila ruang menyempit.

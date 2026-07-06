@@ -1112,6 +1112,7 @@ function MasterStudentsContent() {
         name: displayNameValue,
         schoolId: schoolIdValue,
         schoolName: schoolNameValue,
+        npsn: normalize(pickedSchool?.npsn || ""),
         password: principalForm.password.trim(),
         isActive: principalForm.isActive,
       });

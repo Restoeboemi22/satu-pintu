@@ -49,6 +49,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
     val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
     val scrollState = rememberScrollState()
+    val displayVersion = remember { "v${BuildConfig.VERSION_NAME.substringBefore("-")}" }
 
     fun hasInternetConnection(): Boolean {
         val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
@@ -80,6 +81,9 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
         val normalizedPassword = userPassword.trim()
         val normalizedLoginKey = usernameInput.trim().lowercase()
         val requestedSchoolScope = normalizeScope(requestedSchoolId)
+        val requestedTenantAliases = linkedSetOf<String>().apply {
+            if (requestedSchoolScope.isNotBlank()) add(requestedSchoolScope)
+        }
         val now = System.currentTimeMillis()
 
         fun sha256Hex(input: String): String {
@@ -96,9 +100,75 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
             return ""
         }
 
+        fun normalizeLookupKey(value: String?): String {
+            return value.orEmpty()
+                .trim()
+                .lowercase()
+                .replace("\\s+".toRegex(), "_")
+                .replace(Regex("[^a-z0-9_]"), "")
+        }
+
+        fun resolveRequestedTenantAliases(onResolved: () -> Unit) {
+            if (requestedSchoolScope.isBlank()) {
+                onResolved()
+                return
+            }
+
+            val aliases = linkedSetOf(requestedSchoolScope)
+
+            fun finish() {
+                requestedTenantAliases.clear()
+                requestedTenantAliases.addAll(aliases.filter { it.isNotBlank() })
+                onResolved()
+            }
+
+            rootRef.child("schools").child(requestedSchoolScope).addListenerForSingleValueEvent(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    if (snapshot.exists()) {
+                        aliases.add(normalizeScope(readString(snapshot, "schoolId").ifBlank { snapshot.key.orEmpty() }))
+                        aliases.add(normalizeScope(readString(snapshot, "npsn")))
+                        finish()
+                        return
+                    }
+
+                    rootRef.child("schools").orderByChild("npsn").equalTo(requestedSchoolScope)
+                        .addListenerForSingleValueEvent(object : ValueEventListener {
+                            override fun onDataChange(npsnSnapshot: DataSnapshot) {
+                                val schoolSnapshot = npsnSnapshot.children.firstOrNull()
+                                if (schoolSnapshot != null) {
+                                    aliases.add(normalizeScope(readString(schoolSnapshot, "schoolId").ifBlank { schoolSnapshot.key.orEmpty() }))
+                                    aliases.add(normalizeScope(readString(schoolSnapshot, "npsn")))
+                                }
+                                finish()
+                            }
+
+                            override fun onCancelled(error: DatabaseError) {
+                                finish()
+                            }
+                        })
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    finish()
+                }
+            })
+        }
+
+        fun matchesRequestedTenant(
+            schoolId: String?,
+            npsn: String? = ""
+        ): Boolean {
+            val candidates = linkedSetOf(
+                normalizeScope(schoolId.orEmpty()),
+                normalizeScope(npsn.orEmpty())
+            ).filter { it.isNotBlank() }
+            return requestedTenantAliases.isNotEmpty() && candidates.any { requestedTenantAliases.contains(it) }
+        }
+
         fun saveSession(
             role: String,
             schoolId: String = "",
+            npsn: String = "",
             schoolName: String = "",
             displayName: String = "",
             studentId: String = "",
@@ -107,17 +177,19 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
             teacherId: String = ""
         ): Boolean {
             val normalizedSchoolId = normalizeScope(schoolId)
-            if (requestedSchoolScope.isBlank()) {
+            if (requestedTenantAliases.isEmpty()) {
                 onError("Kode sekolah wajib diisi sebelum login.")
                 return false
             }
-            if (normalizedSchoolId.isBlank() || normalizedSchoolId != requestedSchoolScope) {
+            if (normalizedSchoolId.isBlank() || !matchesRequestedTenant(schoolId, npsn)) {
                 onError("Akun ini tidak berada pada tenant sekolah yang dipilih.")
                 return false
             }
             prefs.edit().apply {
                 putString("user_role", role)
                 putString("user_school_id", normalizedSchoolId)
+                putString("user_npsn", npsn.trim())
+                putBoolean("user_is_osis_staff", false)
                 putString("user_school_name", schoolName)
                 putString("user_display_name", displayName)
                 putString("user_student_id", studentId)
@@ -164,13 +236,54 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
         fun matchesRequestedSchool(snapshot: DataSnapshot?): Boolean {
             if (snapshot == null || !snapshot.exists()) return false
             val snapshotSchoolId = normalizeScope(readString(snapshot, "schoolId"))
-            return snapshotSchoolId.isNotBlank() && snapshotSchoolId == requestedSchoolScope
+            val snapshotNpsn = normalizeScope(readString(snapshot, "npsn"))
+            return snapshotSchoolId.isNotBlank() && matchesRequestedTenant(snapshotSchoolId, snapshotNpsn)
         }
 
         fun queryByChild(path: String, child: String, value: String, onResult: (DataSnapshot?) -> Unit, onFail: (String) -> Unit) {
             rootRef.child(path).orderByChild(child).equalTo(value).addListenerForSingleValueEvent(object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     onResult(snapshot.children.firstOrNull { matchesRequestedSchool(it) })
+                }
+
+                override fun onCancelled(error: DatabaseError) {
+                    onFail(error.message)
+                }
+            })
+        }
+
+        fun findPrincipalByAlias(path: String, alias: String, onResult: (DataSnapshot?) -> Unit, onFail: (String) -> Unit) {
+            val normalizedAlias = normalizeLookupKey(alias.substringBefore("@"))
+            if (normalizedAlias.isBlank()) {
+                onResult(null)
+                return
+            }
+
+            rootRef.child(path).addListenerForSingleValueEvent(object : ValueEventListener {
+                override fun onDataChange(snapshot: DataSnapshot) {
+                    if (!snapshot.exists()) {
+                        onResult(null)
+                        return
+                    }
+
+                    val candidates = snapshot.children.filter { child ->
+                        if (!matchesRequestedSchool(child)) return@filter false
+
+                        val usernameKey = normalizeLookupKey(readString(child, "username"))
+                        val nameKey = normalizeLookupKey(readString(child, "name", "nama", "principalName"))
+                        usernameKey == normalizedAlias ||
+                            nameKey == normalizedAlias ||
+                            usernameKey.startsWith(normalizedAlias) ||
+                            nameKey.startsWith(normalizedAlias)
+                    }
+
+                    val exactMatch = candidates.firstOrNull { child ->
+                        val usernameKey = normalizeLookupKey(readString(child, "username"))
+                        val nameKey = normalizeLookupKey(readString(child, "name", "nama", "principalName"))
+                        usernameKey == normalizedAlias || nameKey == normalizedAlias
+                    }
+
+                    onResult(exactMatch ?: candidates.firstOrNull())
                 }
 
                 override fun onCancelled(error: DatabaseError) {
@@ -202,13 +315,13 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
             return false
         }
 
-        fun ensureSchoolServiceActive(schoolIdValue: String, onAllowed: () -> Unit) {
+        fun ensureSchoolServiceActive(schoolIdValue: String, npsnValue: String = "", onAllowed: () -> Unit) {
             val normalizedSchoolId = normalizeScope(schoolIdValue)
             if (normalizedSchoolId.isBlank()) {
                 onError("Akun belum memiliki schoolId yang valid.")
                 return
             }
-            if (normalizedSchoolId != requestedSchoolScope) {
+            if (!matchesRequestedTenant(schoolIdValue, npsnValue)) {
                 onError("Akun ini bukan milik tenant sekolah yang dipilih.")
                 return
             }
@@ -239,10 +352,11 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
         fun completeTeacherLogin(snapshot: DataSnapshot) {
             val teacherPath = snapshot.ref.path.toString().removePrefix("/")
             val schoolIdValue = readString(snapshot, "schoolId")
+            val npsnValue = readString(snapshot, "npsn")
             val schoolNameValue = readString(snapshot, "schoolName")
             val displayNameValue = readString(snapshot, "name", "nama")
             val teacherIdentity = readString(snapshot, "nuptk", "credential", "username").ifBlank { userPassword }
-            ensureSchoolServiceActive(schoolIdValue) {
+            ensureSchoolServiceActive(schoolIdValue, npsnValue) {
                 rootRef.updateChildren(
                     mutableMapOf<String, Any>(
                         "$teacherPath/lastLogin" to now,
@@ -252,6 +366,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                 if (!saveSession(
                     role = "teacher",
                     schoolId = schoolIdValue,
+                    npsn = npsnValue,
                     schoolName = schoolNameValue,
                     displayName = displayNameValue,
                     loginKey = teacherIdentity,
@@ -281,6 +396,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
             }
 
             val schoolIdValue = readString(snapshot, "schoolId")
+            val npsnValue = readString(snapshot, "npsn")
             val schoolNameValue = readString(snapshot, "schoolName")
             val displayNameValue = readString(snapshot, "name", "nama", "principalName").ifBlank { "Kepala Sekolah" }
             val principalLoginKey = readString(snapshot, "username", "principalId", "nip").ifBlank {
@@ -292,12 +408,13 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                 "${snapshot.ref.path.toString().removePrefix("/")}/lastLoginAt" to now
             )
 
-            ensureSchoolServiceActive(schoolIdValue) {
+            ensureSchoolServiceActive(schoolIdValue, npsnValue) {
                 rootRef.updateChildren(updates)
                     .addOnSuccessListener {
                         if (!saveSession(
                                 role = "principal",
                                 schoolId = schoolIdValue,
+                                npsn = npsnValue,
                                 schoolName = schoolNameValue,
                                 displayName = displayNameValue,
                                 loginKey = principalLoginKey
@@ -354,8 +471,27 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
             })
         }
 
+        fun verifyAndBindPrincipal(snapshot: DataSnapshot): Boolean {
+            if (!verifyCredential(
+                    snapshot,
+                    "kepala sekolah",
+                    setOf(readString(snapshot, "nip"), readString(snapshot, "nuptk"))
+                )) {
+                return false
+            }
+
+            val schoolIdValue = normalizeScope(readString(snapshot, "schoolId"))
+            if (schoolIdValue.isBlank()) {
+                onError("Akun kepala sekolah belum memiliki schoolId.")
+                return false
+            }
+
+            bindPrincipal(snapshot)
+            return true
+        }
+
         fun checkPrincipalAccount() {
-            val usernameKey = usernameInput.substringBefore("@").trim().lowercase()
+            val usernameKey = normalizeLookupKey(usernameInput.substringBefore("@"))
             val principalPaths = listOf("principal_accounts", "master_principals")
 
             fun checkPath(index: Int) {
@@ -368,23 +504,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                 rootRef.child(path).child(usernameKey).addListenerForSingleValueEvent(object : ValueEventListener {
                     override fun onDataChange(snapshot: DataSnapshot) {
                         if (snapshot.exists()) {
-                            val credentialHashValue = normalizeScope(readString(snapshot, "credentialHash"))
-                            val credentialValue = normalizeScope(readString(snapshot, "credential", "nip", "nuptk", "password"))
-                            val schoolIdValue = normalizeScope(readString(snapshot, "schoolId"))
-                            if (credentialHashValue.isNotBlank()) {
-                                if (sha256Hex(normalizedPassword) != credentialHashValue) {
-                                    onError("Password/NIP kepala sekolah tidak sesuai.")
-                                    return
-                                }
-                            } else if (credentialValue.isNotBlank() && credentialValue != normalizeScope(normalizedPassword)) {
-                                onError("Password/NIP kepala sekolah tidak sesuai.")
-                                return
-                            }
-                            if (schoolIdValue.isBlank()) {
-                                onError("Akun kepala sekolah belum memiliki schoolId.")
-                                return
-                            }
-                            bindPrincipal(snapshot)
+                            verifyAndBindPrincipal(snapshot)
                         } else {
                             queryByChild(
                                 path = path,
@@ -392,25 +512,20 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                                 value = usernameKey,
                                 onResult = { byUsername ->
                                     if (byUsername != null) {
-                                        val credentialHashValue = normalizeScope(readString(byUsername, "credentialHash"))
-                                        val credentialValue = normalizeScope(readString(byUsername, "credential", "nip", "nuptk", "password"))
-                                        val schoolIdValue = normalizeScope(readString(byUsername, "schoolId"))
-                                        if (credentialHashValue.isNotBlank()) {
-                                            if (sha256Hex(normalizedPassword) != credentialHashValue) {
-                                                onError("Password/NIP kepala sekolah tidak sesuai.")
-                                                return@queryByChild
-                                            }
-                                        } else if (credentialValue.isNotBlank() && credentialValue != normalizeScope(normalizedPassword)) {
-                                            onError("Password/NIP kepala sekolah tidak sesuai.")
-                                            return@queryByChild
-                                        }
-                                        if (schoolIdValue.isBlank()) {
-                                            onError("Akun kepala sekolah belum memiliki schoolId.")
-                                            return@queryByChild
-                                        }
-                                        bindPrincipal(byUsername)
+                                        verifyAndBindPrincipal(byUsername)
                                     } else {
-                                        checkPath(index + 1)
+                                        findPrincipalByAlias(
+                                            path = path,
+                                            alias = usernameKey,
+                                            onResult = { aliasSnapshot ->
+                                                if (aliasSnapshot != null) {
+                                                    verifyAndBindPrincipal(aliasSnapshot)
+                                                } else {
+                                                    checkPath(index + 1)
+                                                }
+                                            },
+                                            onFail = { message -> onError("Gagal memverifikasi kepala sekolah: $message") }
+                                        )
                                     }
                                 },
                                 onFail = { message -> onError("Gagal memverifikasi kepala sekolah: $message") }
@@ -434,6 +549,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
             }
             val nisnValue = readString(studentSnapshot, "nisn").ifEmpty { studentSnapshot.key ?: userPassword }
             val schoolIdValue = readString(studentSnapshot, "schoolId")
+            val npsnValue = readString(studentSnapshot, "npsn")
             val schoolNameValue = readString(studentSnapshot, "schoolName")
             val displayName = readString(studentSnapshot, "name", "nama")
             val className = readString(studentSnapshot, "class", "kelas")
@@ -452,7 +568,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                 "master_students/$nisnValue/device" to deviceId,
             )
 
-            ensureSchoolServiceActive(schoolIdValue) {
+            ensureSchoolServiceActive(schoolIdValue, npsnValue) {
                 rootRef.updateChildren(updates)
                     .addOnSuccessListener {
                         if (legacySnapshot != null && legacySnapshot.exists()) {
@@ -466,6 +582,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                         if (!saveSession(
                             role = "student",
                             schoolId = schoolIdValue,
+                            npsn = npsnValue,
                             schoolName = schoolNameValue,
                             displayName = displayName,
                             studentId = nisnValue,
@@ -486,6 +603,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                 return
             }
             val schoolIdValue = readString(staffSnapshot, "schoolId")
+            val npsnValue = readString(staffSnapshot, "npsn")
             val schoolNameValue = readString(staffSnapshot, "schoolName")
             val displayNameValue = readString(staffSnapshot, "name", "nama")
             val staffIdentity = readString(staffSnapshot, "username", "staffId", "id").ifBlank {
@@ -493,7 +611,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
             }
             val registeredDeviceId = staffSnapshot.child("deviceId").getValue(String::class.java)
 
-            ensureSchoolServiceActive(schoolIdValue) {
+            ensureSchoolServiceActive(schoolIdValue, npsnValue) {
                 if (registeredDeviceId == null || registeredDeviceId.isEmpty()) {
                     staffSnapshot.ref.updateChildren(
                         mutableMapOf<String, Any>(
@@ -506,6 +624,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                             if (!saveSession(
                                     role = "staff",
                                     schoolId = schoolIdValue,
+                                    npsn = npsnValue,
                                     schoolName = schoolNameValue,
                                     displayName = displayNameValue,
                                     loginKey = staffIdentity
@@ -519,6 +638,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                     if (!saveSession(
                             role = "staff",
                             schoolId = schoolIdValue,
+                            npsn = npsnValue,
                             schoolName = schoolNameValue,
                             displayName = displayNameValue,
                             loginKey = staffIdentity
@@ -710,14 +830,16 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
             })
         }
 
-        if (flavor == "kepala") {
-            checkPrincipalAccount()
-        } else if (flavor == "siswa") {
-            // APK siswa harus memprioritaskan jalur siswa agar akun OSIS yang tetap memakai akun siswa
-            // tidak tertangkap ke node staff legacy dengan username yang sama.
-            checkStudentAndTeacher()
-        } else {
-            proceedStaffStudentTeacher()
+        resolveRequestedTenantAliases {
+            if (flavor == "kepala") {
+                checkPrincipalAccount()
+            } else if (flavor == "siswa") {
+                // APK siswa harus memprioritaskan jalur siswa agar akun OSIS yang tetap memakai akun siswa
+                // tidak tertangkap ke node staff legacy dengan username yang sama.
+                checkStudentAndTeacher()
+            } else {
+                proceedStaffStudentTeacher()
+            }
         }
     }
 
@@ -853,7 +975,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                     )
 
                     Text(
-                        text = "v2.1 (Dual Login)",
+                        text = displayVersion,
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White.copy(alpha = 0.7f),
                         modifier = Modifier.padding(top = 4.dp)

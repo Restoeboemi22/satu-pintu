@@ -275,7 +275,7 @@ fun StaffStudentCard(student: Student, onClick: () -> Unit) {
             
             Column {
                 Text(student.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                Text("${student.className} â€¢ ${student.nisn}", style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.78f))
+                Text(student.className, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.78f))
             }
         }
     }

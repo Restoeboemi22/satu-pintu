@@ -175,6 +175,8 @@ async function getStudentsBySchoolId(schoolId: string) {
       religion: normalizeReligion(value?.religion),
       status: normalizeStatus(value?.status),
       schoolId: normalizeText(value?.schoolId),
+      schoolName: normalizeText(value?.schoolName),
+      npsn: normalizeText(value?.npsn),
       className: normalizeText(value?.class),
     }))
     .filter((student) => normalizeText(student.schoolId).toLowerCase() === normalizedSchoolId);
@@ -455,7 +457,9 @@ async function resetStudentDevice(payload: StudentMutationPayload, authorization
   await Promise.all([
     getGasAdminDb().ref().update(gasUpdates),
     getEduLockAdminDb().ref().update({
-      [`students/${nisn}/device_uuid`]: null,
+      [`students/${nisn}/device_uuid`]: "",
+      [`active_sessions/${nisn}`]: null,
+      [`active_sessions_by_school/${tenant.schoolId}/${nisn}`]: null,
     }),
   ]);
 
@@ -951,6 +955,53 @@ async function bulkImportStudents(payload: StudentMutationPayload, authorization
   }
 
   return { count, skipped };
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const profile = await requireEduLockAdminProfile(request.headers.get("authorization"));
+    const url = new URL(request.url);
+    const requestedSchoolId = normalizeText(url.searchParams.get("schoolId"));
+    const tenant = resolveTenantContext(profile, { schoolId: requestedSchoolId });
+
+    if (!tenant.schoolId) {
+      throw new Error("schoolId tenant tidak valid.");
+    }
+
+    const [students, classes] = await Promise.all([
+      getStudentsBySchoolId(tenant.schoolId),
+      getClassesBySchoolId(tenant.schoolId),
+    ]);
+
+    const classCatalog = Object.entries(classes || {})
+      .map(([key, value]) => {
+        const obj = (value as any) || {};
+        const name = normalizeText(obj?.className || obj?.class || key);
+        if (!name) return null;
+        return {
+          key: normalizeEduLockClassKey(name) || normalizeEduLockClassKey(key),
+          name,
+          disabled: Boolean(obj?.disabled),
+          createdAt: typeof obj?.createdAt === "number" ? obj.createdAt : undefined,
+          updatedAt: typeof obj?.updatedAt === "number" ? obj.updatedAt : undefined,
+        };
+      })
+      .filter(Boolean)
+      .sort((a: any, b: any) => String(a?.name || "").localeCompare(String(b?.name || ""), "id-ID"));
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        schoolId: tenant.schoolId,
+        schoolName: tenant.schoolName,
+        npsn: tenant.npsn,
+        students,
+        classes: classCatalog,
+      },
+    });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, message: String(error?.message || error) }, { status: 400 });
+  }
 }
 
 export async function POST(request: NextRequest) {

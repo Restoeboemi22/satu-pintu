@@ -1,4 +1,4 @@
-﻿package com.satupintu.mobile.ui.screens.teacher
+package com.satupintu.mobile.ui.screens.teacher
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -311,15 +311,18 @@ fun StudentTableRow(
         ) {
             val isDead = pet?.status == "DEAD" || (pet?.health ?: 0) <= 0
             val isSick = !isDead && ((pet?.health ?: 100) < 30 || (pet?.happiness ?: 100) < 30)
+            val petBackgroundColor = when {
+                pet == null -> Color(0xFF334155).copy(alpha = 0.88f)
+                isDead -> Color(0xFFB91C1C).copy(alpha = 0.92f)
+                isSick -> Color(0xFFB45309).copy(alpha = 0.92f)
+                else -> Color(0xFF15803D).copy(alpha = 0.92f)
+            }
+            val petTextColor = Color.White
 
             Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = when {
-                    pet == null -> Color.Gray.copy(alpha = 0.2f)
-                    isDead -> Color(0xFFF44336).copy(alpha = 0.2f)
-                    isSick -> Color(0xFFFF9800).copy(alpha = 0.2f)
-                    else -> Color(0xFF4CAF50).copy(alpha = 0.2f)
-                }
+                shape = RoundedCornerShape(999.dp),
+                color = petBackgroundColor,
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.16f))
             ) {
                 Text(
                     text = when {
@@ -329,13 +332,9 @@ fun StudentTableRow(
                         else -> "Sehat"
                     },
                     style = MaterialTheme.typography.labelSmall,
-                    color = when {
-                        pet == null -> Color.Gray
-                        isDead -> Color(0xFFF44336)
-                        isSick -> Color(0xFFFF9800)
-                        else -> Color(0xFF4CAF50)
-                    },
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    fontWeight = FontWeight.Bold,
+                    color = petTextColor,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis

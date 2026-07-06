@@ -1,4 +1,4 @@
-﻿package com.satupintu.mobile.ui.screens.teacher
+package com.satupintu.mobile.ui.screens.teacher
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -223,7 +223,7 @@ fun LiteracyLogCard(log: LiteracyLog, rowIndex: Int, onClick: () -> Unit, onDele
                             color = Color.White
                         )
                         Text(
-                            text = "${log.studentClass} â€¢ ${formatDate(log.timestamp)}",
+                            text = "${log.studentClass} | ${formatDate(log.timestamp)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = LenteraTextSecondary
                         )

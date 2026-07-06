@@ -1,0 +1,86 @@
+<resources>
+    <string name="app_name">EduLock</string>
+
+    <!-- Main Activity -->
+    <string name="status_monitoring">Status Monitoring</string>
+    <string name="gps_active">GPS: Aktif</string>
+    <string name="gps_inactive">GPS: Tidak Aktif</string>
+    <string name="location_in_school">Lokasi: Di Area Sekolah</string>
+    <string name="location_outside_school">Lokasi: Di Luar Area Sekolah</string>
+    <string name="distance_format">Jarak: %d meter</string>
+    <string name="school_hours">Jam Sekolah</string>
+    <string name="current_time_format">Waktu: %s</string>
+    <string name="active_hours_format">Jam Aktif: %02d:00 - %02d:00</string>
+    <string name="view_violations">Lihat Pelanggaran</string>
+    <string name="settings_admin">Pengaturan (Admin)</string>
+
+    <!-- Registration -->
+    <string name="registration_title">Registrasi EduLock</string>
+    <string name="register_device">Daftarkan perangkat Anda</string>
+    <string name="nisn_hint">NISN (10 digit)</string>
+    <string name="name_hint">Nama Lengkap</string>
+    <string name="class_hint">Kelas (contoh: 10-A)</string>
+    <string name="device_info">Informasi Perangkat</string>
+    <string name="device_id_format">Device ID: %s</string>
+    <string name="register">Daftar</string>
+    <string name="nisn_empty">NISN tidak boleh kosong</string>
+    <string name="nisn_invalid">NISN harus 10 digit</string>
+    <string name="name_empty">Nama tidak boleh kosong</string>
+    <string name="class_empty">Kelas tidak boleh kosong</string>
+    <string name="registration_success">Registrasi berhasil!</string>
+    <string name="registration_failed">Registrasi gagal. Coba lagi.</string>
+    <string name="nisn_already_registered">NISN ini sudah terdaftar di perangkat lain!\nHubungi admin sekolah.</string>
+    <string name="complete_registration">Selesaikan registrasi terlebih dahulu</string>
+    <string name="registration_terms">Dengan mendaftar, Anda menyetujui bahwa aplikasi ini akan memantau lokasi dan aktivitas perangkat selama jam sekolah.</string>
+    <string name="registration_warning">Satu NISN hanya dapat didaftarkan di satu perangkat. Pastikan data Anda benar.</string>
+
+    <!-- Lock Screen -->
+    <string name="device_locked">PERANGKAT TERKUNCI</string>
+    <string name="outside_school_area">Anda berada di luar area sekolah saat jam belajar</string>
+    <string name="distance_from_school">Jarak dari sekolah: %d meter</string>
+    <string name="return_to_school">Kembali ke area sekolah untuk membuka kunci</string>
+    <string name="contact_teacher">Hubungi Guru/Admin</string>
+    <string name="violation_recorded">⚠️ Pelanggaran ini akan dicatat dalam sistem</string>
+
+    <!-- Overlay Lock -->
+    <string name="warning">⚠️ PERINGATAN ⚠️</string>
+    <string name="gps_disabled">GPS MATI!\nNyalakan GPS untuk melanjutkan</string>
+    <string name="fake_gps_detected">FAKE GPS TERDETEKSI!\nMatikan aplikasi lokasi palsu</string>
+    <string name="invalid_time">WAKTU SISTEM TIDAK VALID!\nKembalikan ke pengaturan otomatis</string>
+    <string name="steps_title">Langkah-langkah:</string>
+    <string name="gps_enable_steps">1. Buka Pengaturan HP\n2. Cari menu Lokasi/Location\n3. Nyalakan GPS\n4. Layar ini akan otomatis tertutup</string>
+    <string name="checking_status">Memeriksa status...</string>
+
+    <!-- Device Admin -->
+    <string name="device_admin_explanation">EduLock memerlukan izin Administrator untuk melindungi aplikasi dari penghapusan dan memastikan keamanan monitoring.</string>
+    <string name="disable_admin_warning">Menonaktifkan EduLock akan melanggar aturan sekolah!</string>
+
+    <!-- Notifications -->
+    <string name="monitoring_active">EduLock Aktif</string>
+    <string name="monitoring_description">Monitoring lokasi dan keamanan berjalan</string>
+
+    <!-- Violations -->
+    <string name="violation_type_outside_area">Di Luar Area Sekolah</string>
+    <string name="violation_type_gps_disabled">GPS Dimatikan</string>
+    <string name="violation_type_fake_gps">Menggunakan Fake GPS</string>
+    <string name="violation_type_time_manipulation">Manipulasi Waktu Sistem</string>
+    <string name="violation_type_multiple_device">Mencoba Daftar di Perangkat Lain</string>
+    <string name="violation_type_uninstall_attempt">Mencoba Uninstall Aplikasi</string>
+
+    <!-- Settings -->
+    <string name="admin_password">Password Admin</string>
+    <string name="school_coordinates">Koordinat Sekolah</string>
+    <string name="school_radius">Radius Area Sekolah (meter)</string>
+    <string name="school_start_time">Jam Mulai Sekolah</string>
+    <string name="school_end_time">Jam Selesai Sekolah</string>
+    <string name="save_settings">Simpan Pengaturan</string>
+
+    <!-- Common -->
+    <string name="ok">OK</string>
+    <string name="cancel">Batal</string>
+    <string name="yes">Ya</string>
+    <string name="no">Tidak</string>
+    <string name="loading">Memuat...</string>
+    <string name="error">Terjadi kesalahan</string>
+    <string name="retry">Coba Lagi</string>
+</resources>

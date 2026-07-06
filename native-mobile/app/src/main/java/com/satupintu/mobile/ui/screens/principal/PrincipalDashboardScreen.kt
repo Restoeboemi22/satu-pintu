@@ -1,4 +1,4 @@
-﻿package com.satupintu.mobile.ui.screens.principal
+package com.satupintu.mobile.ui.screens.principal
 
 import android.content.Context
 import androidx.compose.foundation.Canvas
@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -115,6 +116,13 @@ private data class PrincipalMenuItem(
     val route: String
 )
 
+private data class PrincipalMenuStyle(
+    val accent: Color,
+    val gradient: List<Color>,
+    val iconContainer: Color,
+    val badgeLabel: String
+)
+
 private object PrincipalExecutivePalette {
     val BackgroundTop = Color(0xFFE6F0FF)
     val BackgroundBottom = Color(0xFFCFE0F7)
@@ -151,10 +159,56 @@ private fun accentColorForRoute(route: String): Color = when (route) {
     else -> PrincipalExecutivePalette.AccentSoft
 }
 
+private fun principalMenuStyle(route: String): PrincipalMenuStyle = when (route) {
+    PRINCIPAL_ATTENDANCE_ROUTE -> PrincipalMenuStyle(
+        accent = Color(0xFF2D9CDB),
+        gradient = listOf(Color(0xFFF3FBFF), Color(0xFFD8EEFF)),
+        iconContainer = Color(0xFFD9F0FF),
+        badgeLabel = "Pantau Presensi"
+    )
+    PRINCIPAL_LITERACY_ROUTE -> PrincipalMenuStyle(
+        accent = Color(0xFFE49B1F),
+        gradient = listOf(Color(0xFFFFF7EA), Color(0xFFFFE6BF)),
+        iconContainer = Color(0xFFFFEBC8),
+        badgeLabel = "Pantau Literasi"
+    )
+    PRINCIPAL_PRAYER_ROUTE -> PrincipalMenuStyle(
+        accent = Color(0xFF22A97A),
+        gradient = listOf(Color(0xFFEFFFF8), Color(0xFFD2F5E8)),
+        iconContainer = Color(0xFFD8F7ED),
+        badgeLabel = "Pantau Ibadah"
+    )
+    PRINCIPAL_SEVEN_HABITS_ROUTE -> PrincipalMenuStyle(
+        accent = Color(0xFF6C63D9),
+        gradient = listOf(Color(0xFFF4F1FF), Color(0xFFE0DAFF)),
+        iconContainer = Color(0xFFE4DFFF),
+        badgeLabel = "Pantau Karakter"
+    )
+    PRINCIPAL_DISCIPLINE_ROUTE -> PrincipalMenuStyle(
+        accent = Color(0xFFE05A74),
+        gradient = listOf(Color(0xFFFFF0F4), Color(0xFFFFD9E2)),
+        iconContainer = Color(0xFFFFE0E7),
+        badgeLabel = "Pantau Disiplin"
+    )
+    PRINCIPAL_BULLYING_ROUTE -> PrincipalMenuStyle(
+        accent = Color(0xFF8A63E8),
+        gradient = listOf(Color(0xFFF5F1FF), Color(0xFFE2D8FF)),
+        iconContainer = Color(0xFFE6DEFF),
+        badgeLabel = "Pantau Aduan"
+    )
+    else -> PrincipalMenuStyle(
+        accent = PrincipalExecutivePalette.AccentSoft,
+        gradient = listOf(PrincipalExecutivePalette.HeroTop, PrincipalExecutivePalette.HeroMiddle),
+        iconContainer = PrincipalExecutivePalette.SurfaceSoft,
+        badgeLabel = "Menu Kepala Sekolah"
+    )
+}
+
 private fun metricAccentForTitle(title: String): Color = when {
     title.contains("hadir", ignoreCase = true) -> PrincipalExecutivePalette.Success
     title.contains("literasi", ignoreCase = true) -> PrincipalExecutivePalette.Warning
     title.contains("sholat", ignoreCase = true) -> PrincipalExecutivePalette.Success
+    title.contains("kaih", ignoreCase = true) -> Color(0xFF5E60CE)
     title.contains("pelanggaran", ignoreCase = true) -> PrincipalExecutivePalette.Danger
     title.contains("aduan", ignoreCase = true) -> Color(0xFF7A6FF0)
     title.contains("aktif", ignoreCase = true) -> PrincipalExecutivePalette.Accent
@@ -168,10 +222,50 @@ private fun metricAccentForTitle(title: String): Color = when {
 fun PrincipalDashboardScreen(
     onNavigate: (String) -> Unit,
     onLogout: () -> Unit,
-    viewModel: PrincipalDashboardViewModel = viewModel()
+    viewModel: PrincipalDashboardViewModel = viewModel(),
+    sevenHabitsViewModel: TeacherSevenHabitsViewModel = viewModel()
 ) {
     BindPrincipalSession(viewModel)
     val state by viewModel.uiState.collectAsState()
+    val sevenHabitsRows by sevenHabitsViewModel.monitoringRows.collectAsState()
+    val isSevenHabitsLoading by sevenHabitsViewModel.isLoading.collectAsState()
+    val sevenHabitsCalendar = remember { Calendar.getInstance() }
+    val sevenHabitsYear = remember(sevenHabitsCalendar) { sevenHabitsCalendar.get(Calendar.YEAR) }
+    val sevenHabitsMonth = remember(sevenHabitsCalendar) { sevenHabitsCalendar.get(Calendar.MONTH) + 1 }
+    val sevenHabitsWeek = remember(sevenHabitsCalendar) { extractWeekOfMonthFromCalendar(sevenHabitsCalendar) }
+    val sevenHabitsDayName = remember(sevenHabitsCalendar) {
+        when (sevenHabitsCalendar.get(Calendar.DAY_OF_WEEK)) {
+            Calendar.MONDAY -> "Senin"
+            Calendar.TUESDAY -> "Selasa"
+            Calendar.WEDNESDAY -> "Rabu"
+            Calendar.THURSDAY -> "Kamis"
+            Calendar.FRIDAY -> "Jumat"
+            Calendar.SATURDAY -> "Sabtu"
+            else -> "Minggu"
+        }
+    }
+    val sevenHabitsSummary = remember(
+        sevenHabitsRows,
+        sevenHabitsYear,
+        sevenHabitsMonth,
+        sevenHabitsWeek,
+        sevenHabitsDayName
+    ) {
+        buildPrincipalSevenHabitsSummary(
+            rows = sevenHabitsRows,
+            selectedYear = sevenHabitsYear,
+            selectedMonth = sevenHabitsMonth,
+            selectedWeek = sevenHabitsWeek,
+            selectedDayName = sevenHabitsDayName
+        )
+    }
+
+    LaunchedEffect(state.schoolId) {
+        if (state.schoolId.isNotBlank()) {
+            sevenHabitsViewModel.setPrincipalSchoolId(state.schoolId)
+        }
+    }
+
     val menuItems = listOf(
         PrincipalMenuItem("Rekap Presensi", "Pantau H, S, I, A hari ini", Icons.Default.Today, PRINCIPAL_ATTENDANCE_ROUTE),
         PrincipalMenuItem("Progress Literasi", "Lihat tugas aktif dan laporan", Icons.Default.MenuBook, PRINCIPAL_LITERACY_ROUTE),
@@ -199,11 +293,16 @@ fun PrincipalDashboardScreen(
                 subtitle = "Akses cepat untuk memantau kondisi sekolah secara menyeluruh"
             )
 
-            menuItems.forEach { item ->
-                PrincipalMenuCard(item = item, onClick = { onNavigate(item.route) })
-            }
+            PrincipalMenuGrid(
+                items = menuItems,
+                onNavigate = onNavigate
+            )
 
-            PrincipalSummarySection(state)
+            PrincipalSummarySection(
+                state = state,
+                sevenHabitsSummary = sevenHabitsSummary,
+                isSevenHabitsLoading = isSevenHabitsLoading
+            )
             PrincipalAttentionSection(
                 title = "Siswa Perlu Perhatian",
                 students = state.attentionStudents
@@ -259,7 +358,7 @@ fun PrincipalAttendanceScreen(
             )
             DetailStatCard(
                 title = "Rekap ${PrincipalSevenHabitsMonths.getOrElse(state.attendanceRecapMonth - 1) { "Bulan ${state.attendanceRecapMonth}" }} ${state.attendanceRecapYear}",
-                description = "Total siswa ${state.attendanceRecap.totalStudents} â€¢ Hari aktif ${state.attendanceRecap.validSchoolDays} â€¢ Terlambat ${state.attendanceRecap.terlambat}",
+                description = "Total siswa ${state.attendanceRecap.totalStudents} | Hari aktif ${state.attendanceRecap.validSchoolDays} | Terlambat ${state.attendanceRecap.terlambat}",
                 progress = state.attendanceRecap.attendanceRate
             )
             PrincipalClassSection(state.attendanceRecapClassSummaries, focus = "attendance")
@@ -409,7 +508,7 @@ fun PrincipalLiteracyScreen(
             )
             DetailStatCard(
                 title = "Partisipasi Literasi",
-                description = "Siswa submit ${state.literacy.studentsSubmittedThisMonth}/${state.literacy.totalStudents} â€¢ Reviewed ${state.literacy.reviewedReports}",
+                description = "Siswa submit ${state.literacy.studentsSubmittedThisMonth}/${state.literacy.totalStudents} | Reviewed ${state.literacy.reviewedReports}",
                 progress = state.literacy.participationRate
             )
             PrincipalLiteracyDistributionSection(state)
@@ -459,7 +558,7 @@ fun PrincipalPrayerScreen(
             )
             DetailStatCard(
                 title = "Rekap ${PrincipalSevenHabitsMonths.getOrElse(state.prayerRecapMonth - 1) { "Bulan ${state.prayerRecapMonth}" }} ${state.prayerRecapYear}",
-                description = "Total siswa ${state.prayerRecap.totalStudents} â€¢ Hari aktif ${state.prayerRecap.validPrayerDays}",
+                description = "Total siswa ${state.prayerRecap.totalStudents} | Hari aktif ${state.prayerRecap.validPrayerDays}",
                 progress = state.prayerRecap.prayerRate
             )
             PrincipalClassSection(state.prayerRecapClassSummaries, focus = "prayer")
@@ -555,7 +654,7 @@ fun PrincipalSevenHabitsScreen(
             )
 
             PrincipalSoftChip(
-                label = "${PrincipalSevenHabitsMonths.getOrElse(selectedMonth - 1) { "Bulan $selectedMonth" }} $selectedYear â€¢ Minggu $selectedWeek",
+                label = "${PrincipalSevenHabitsMonths.getOrElse(selectedMonth - 1) { "Bulan $selectedMonth" }} $selectedYear | Minggu $selectedWeek",
                 accent = Color(0xFF5E60CE)
             )
 
@@ -583,7 +682,7 @@ fun PrincipalSevenHabitsScreen(
 
                 DetailStatCard(
                     title = "Capaian Mingguan Sekolah",
-                    description = "Siswa aktif ${summary.activeStudents}/${summary.totalStudents} â€¢ Log hari dipilih ${summary.dayLogs}",
+                    description = "Siswa aktif ${summary.activeStudents}/${summary.totalStudents} | Log hari dipilih ${summary.dayLogs}",
                     progress = (summary.averageWeeklyScore / 100.0).toFloat()
                 )
 
@@ -632,7 +731,7 @@ fun PrincipalDisciplineScreen(
             )
             DetailStatCard(
                 title = "Status Tindak Lanjut Pelanggaran",
-                description = "Total poin bulan ini ${state.discipline.totalPointsThisMonth} â€¢ Pelanggaran terbuka ${state.discipline.openFollowUps}",
+                description = "Total poin bulan ini ${state.discipline.totalPointsThisMonth} | Pelanggaran terbuka ${state.discipline.openFollowUps}",
                 progress = state.discipline.resolutionRate
             )
             PrincipalAttentionSection(
@@ -680,7 +779,7 @@ fun PrincipalBullyingScreen(
             )
             DetailStatCard(
                 title = "Status Penanganan Aduan",
-                description = "Aduan aktif ${state.bullying.activeReports} â€¢ Prioritas tinggi ${state.bullying.highPriorityReports}",
+                description = "Aduan aktif ${state.bullying.activeReports} | Prioritas tinggi ${state.bullying.highPriorityReports}",
                 progress = state.bullying.resolutionRate
             )
             PrincipalAttentionSection(
@@ -1036,61 +1135,104 @@ private fun PrincipalPulseItem(
 }
 
 @Composable
-private fun PrincipalMenuCard(item: PrincipalMenuItem, onClick: () -> Unit) {
-    val accent = accentColorForRoute(item.route)
-    PrincipalNeuPanel(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        accent = accent
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                color = accent.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Icon(
-                    imageVector = item.icon,
-                    contentDescription = item.title,
-                    tint = accent,
-                    modifier = Modifier.padding(14.dp).size(22.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    item.title,
-                    color = PrincipalExecutivePalette.TextPrimary,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    item.subtitle,
-                    color = PrincipalExecutivePalette.TextSecondary,
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                PrincipalSoftChip(label = "Prioritas Kepala Sekolah", accent = accent)
-            }
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = accent.copy(alpha = 0.12f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.18f))
-            ) {
-                Icon(
-                    imageVector = Icons.Default.TrendingUp,
-                    contentDescription = "Buka ${item.title}",
-                    tint = accent,
-                    modifier = Modifier.padding(12.dp).size(20.dp)
-                )
+private fun PrincipalMenuGrid(
+    items: List<PrincipalMenuItem>,
+    onNavigate: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        items.chunked(2).forEach { rowItems ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                rowItems.forEach { item ->
+                    PrincipalMenuCard(
+                        item = item,
+                        onClick = { onNavigate(item.route) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (rowItems.size == 1) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
             }
         }
     }
 }
 
 @Composable
-private fun PrincipalSummarySection(state: PrincipalDashboardUiState) {
+private fun PrincipalMenuCard(
+    item: PrincipalMenuItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val style = principalMenuStyle(item.route)
+    PrincipalNeuPanel(
+        modifier = modifier
+            .aspectRatio(0.88f)
+            .clickable(onClick = onClick),
+        accent = style.accent,
+        gradientColors = style.gradient,
+        contentPadding = PaddingValues(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Surface(
+                color = style.iconContainer,
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Icon(
+                    imageVector = item.icon,
+                    contentDescription = item.title,
+                    tint = style.accent,
+                    modifier = Modifier.padding(14.dp).size(22.dp)
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = item.title,
+                    color = PrincipalExecutivePalette.TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = item.subtitle,
+                    color = PrincipalExecutivePalette.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 16.sp
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                PrincipalSoftChip(
+                    label = style.badgeLabel,
+                    accent = style.accent
+                )
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = style.accent.copy(alpha = 0.12f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, style.accent.copy(alpha = 0.18f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.TrendingUp,
+                        contentDescription = "Buka ${item.title}",
+                        tint = style.accent,
+                        modifier = Modifier.padding(12.dp).size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrincipalSummarySection(
+    state: PrincipalDashboardUiState,
+    sevenHabitsSummary: PrincipalSevenHabitsSummary,
+    isSevenHabitsLoading: Boolean
+) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         PrincipalSectionHeader(
             title = "Ringkasan Eksekutif",
@@ -1101,6 +1243,11 @@ private fun PrincipalSummarySection(state: PrincipalDashboardUiState) {
                 MetricItem("Hadir", "${state.attendance.hadir}/${state.attendance.totalStudents}", Icons.Default.Groups),
                 MetricItem("Literasi", "${state.literacy.studentsSubmittedThisMonth}/${state.literacy.totalStudents}", Icons.Default.MenuBook),
                 MetricItem("Sholat", "${state.prayer.pray}/${state.prayer.totalStudents}", Icons.Default.Mosque),
+                MetricItem(
+                    "7 KAIH",
+                    if (isSevenHabitsLoading) "..." else formatPrincipalPercent(sevenHabitsSummary.averageWeeklyScore),
+                    Icons.Default.AutoStories
+                ),
                 MetricItem("Pelanggaran", state.discipline.violationsThisMonth.toString(), Icons.Default.Warning),
                 MetricItem("Aduan Aktif", state.bullying.activeReports.toString(), Icons.Default.NotificationsActive)
             )
@@ -1551,7 +1698,7 @@ private fun AttentionStudentRow(item: PrincipalAttentionStudent) {
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "${item.className} â€¢ Risiko ${item.score}",
+                    text = "${item.className} | Risiko ${item.score}",
                     color = PrincipalExecutivePalette.TextSecondary,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -1562,7 +1709,7 @@ private fun AttentionStudentRow(item: PrincipalAttentionStudent) {
             )
         }
         Text(
-            text = item.reasons.joinToString(" â€¢ "),
+            text = item.reasons.joinToString(" | "),
             color = PrincipalExecutivePalette.TextSecondary,
             style = MaterialTheme.typography.bodySmall
         )
@@ -1716,7 +1863,7 @@ private fun PrincipalSevenHabitsClassSection(items: List<PrincipalSevenHabitsCla
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "${item.activeStudents}/${item.totalStudents} siswa aktif â€¢ Log hari ini ${item.dayLogs}",
+                    text = "${item.activeStudents}/${item.totalStudents} siswa aktif | Log hari ini ${item.dayLogs}",
                                     color = PrincipalExecutivePalette.TextSecondary,
                                     style = MaterialTheme.typography.bodySmall
                                 )
@@ -1765,7 +1912,7 @@ private fun PrincipalSevenHabitsAttentionSection(items: List<PrincipalSevenHabit
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "${item.className} â€¢ Hari dipilih ${item.dayStatus}",
+                    text = "${item.className} | Hari dipilih ${item.dayStatus}",
                                     color = PrincipalExecutivePalette.TextSecondary,
                                     style = MaterialTheme.typography.bodySmall
                                 )
@@ -1976,4 +2123,3 @@ private fun formatPrincipalPercent(value: Double): String {
 private fun List<Double>.averageOrZero(): Double {
     return if (isEmpty()) 0.0 else average()
 }
-

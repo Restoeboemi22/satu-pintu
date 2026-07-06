@@ -262,6 +262,7 @@ fun HomeScreen(onNavigate: (String) -> Unit, onLogout: () -> Unit) {
             val key = nisn.trim()
             if (key.isEmpty()) {
                 isOsis = false
+                prefs.edit().putBoolean("user_is_osis_staff", false).apply()
                 return
             }
 
@@ -284,13 +285,17 @@ fun HomeScreen(onNavigate: (String) -> Unit, onLogout: () -> Unit) {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     if (!snapshot.exists()) {
                         isOsis = false
+                        prefs.edit().putBoolean("user_is_osis_staff", false).apply()
                         return
                     }
-                    isOsis = parseActive(snapshot)
+                    val active = parseActive(snapshot)
+                    isOsis = active
+                    prefs.edit().putBoolean("user_is_osis_staff", active).apply()
                 }
 
                 override fun onCancelled(error: DatabaseError) {
                     isOsis = false
+                    prefs.edit().putBoolean("user_is_osis_staff", false).apply()
                 }
             })
         }

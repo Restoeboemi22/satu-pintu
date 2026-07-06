@@ -1,4 +1,4 @@
-﻿package com.satupintu.mobile.ui.screens.teacher
+package com.satupintu.mobile.ui.screens.teacher
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -93,8 +93,7 @@ private fun LenteraGlassCard(modifier: Modifier = Modifier, content: @Composable
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = LenteraGlassCard),
-        border = androidx.compose.foundation.BorderStroke(1.dp, LenteraGlassBorder),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        border = androidx.compose.foundation.BorderStroke(1.dp, LenteraGlassBorder)
     ) {
         Column(content = content)
     }

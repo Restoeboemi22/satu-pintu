@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary Colors -->
+    <color name="primary">#2196F3</color>
+    <color name="primary_dark">#1976D2</color>
+    <color name="primary_light">#BBDEFB</color>
+    <color name="accent">#FF9800</color>
+
+    <!-- Status Colors -->
+    <color name="success">#4CAF50</color>
+    <color name="warning">#FF9800</color>
+    <color name="danger">#D32F2F</color>
+    <color name="info">#2196F3</color>
+
+    <!-- Text Colors -->
+    <color name="text_primary">#333333</color>
+    <color name="text_secondary">#666666</color>
+    <color name="text_hint">#999999</color>
+    <color name="text_white">#FFFFFF</color>
+
+    <!-- Background Colors -->
+    <color name="background">#0F1035</color>
+    <color name="card_background">#FFFFFF</color>
+    <color name="overlay_background">#CC000000</color>
+
+    <!-- Surface / Outline (Premium UI) -->
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_variant">#0F1035</color>
+    <color name="outline">#33FFFFFF</color>
+    <color name="outline_strong">#55FFFFFF</color>
+
+    <!-- Premium Gradient Colors -->
+    <color name="premium_teal">#1A6B8A</color>
+    <color name="premium_indigo">#1A237E</color>
+    <color name="premium_blue">#1976D2</color>
+    <color name="premium_purple">#512DA8</color>
+    <color name="navy_dark">#0F1035</color>
+
+    <!-- Lock Screen Colors -->
+    <color name="lock_screen_bg">#D32F2F</color>
+    <color name="overlay_lock_bg">#CC000000</color>
+
+    <!-- Common -->
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="transparent">#00000000</color>
+</resources>

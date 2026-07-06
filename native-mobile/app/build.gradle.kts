@@ -23,8 +23,8 @@ android {
         applicationId = "com.satupintu.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1006
-        versionName = "1.0.5"
+        versionCode = 1023
+        versionName = "1.0.8"
         buildConfigField("String", "MOBILE_BOUNDARY", "\"${mobileBoundary}\"")
         buildConfigField("String", "ALLOWED_FIREBASE_PROJECT_IDS", "\"${allowedFirebaseProjectIds}\"")
 
@@ -136,6 +136,8 @@ dependencies {
     // Location
     implementation(libs.play.services.location)
     implementation("org.osmdroid:osmdroid-android:6.1.18")
+    implementation("com.squareup.retrofit2:retrofit:2.11.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     
     // Image Loading
     implementation(libs.coil.compose)

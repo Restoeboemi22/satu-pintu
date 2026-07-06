@@ -452,45 +452,19 @@ async function setConfigFlag(payload: EduLockSecurityPayload, authorizationHeade
 }
 
 async function saveClass(payload: EduLockSecurityPayload, authorizationHeader?: string | null) {
-  const profile = await requireEduLockAdminProfile(authorizationHeader);
-  const schoolId = normalizeSchoolId(profile, payload.schoolId);
-  const name = normalizeText(payload.className);
-  const key = normalizeClassKey(name);
-  if (!name || !key) {
-    throw new Error("Nama kelas tidak valid. Contoh: 7A atau VII-A.");
-  }
-
-  const now = Date.now();
-  const existing = await getEduLockAdminDb().ref(`schools/${schoolId}/classes/${key}`).get();
-  await getEduLockAdminDb().ref(`schools/${schoolId}/classes/${key}`).set({
-    key,
-    name,
-    createdAt: existing.exists() ? existing.val()?.createdAt || now : now,
-    updatedAt: now,
-  });
-  await writeEduLockAuditEvent(profile, {
-    type: "edulock.admin.class_saved",
-    message: `Kelas ${name} disimpan.`,
-    schoolId,
-    targetId: key,
-  });
+  await requireEduLockAdminProfile(authorizationHeader);
+  const className = normalizeText(payload.className);
+  throw new Error(
+    `Tambah kelas ${className || ""} wajib melalui jalur induk DATABASE/admin/students?sub=classes agar master_classes dan mirror EduLock tetap sinkron.`
+  );
 }
 
 async function deleteClass(payload: EduLockSecurityPayload, authorizationHeader?: string | null) {
-  const profile = await requireEduLockAdminProfile(authorizationHeader);
-  const schoolId = normalizeSchoolId(profile, payload.schoolId);
-  const key = normalizeClassKey(payload.className);
-  if (!key) {
-    throw new Error("Kelas tidak valid.");
-  }
-
-  await getEduLockAdminDb().ref(`schools/${schoolId}/classes/${key}`).remove();
-  await writeEduLockAuditEvent(profile, {
-    type: "edulock.admin.class_deleted",
-    message: `Kelas ${key} dihapus.`,
-    schoolId,
-    targetId: key,
-  });
+  await requireEduLockAdminProfile(authorizationHeader);
+  const className = normalizeText(payload.className);
+  throw new Error(
+    `Hapus kelas ${className || ""} wajib melalui jalur induk DATABASE/admin/students?sub=classes agar master_classes dan mirror EduLock tetap sinkron.`
+  );
 }
 
 async function saveWeekdaySchedule(payload: EduLockSecurityPayload, authorizationHeader?: string | null) {

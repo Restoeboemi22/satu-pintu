@@ -1,4 +1,4 @@
-﻿package com.satupintu.mobile.ui.screens
+package com.satupintu.mobile.ui.screens
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -508,10 +508,10 @@ fun TipsCard() {
                 icon = Icons.Default.Info,
                 title = "Cara Merawat Pet:",
                 content = """
-                    â€¢ Kenyang: Baca buku di E-Library (>1 jam)
-                    â€¢ Kebahagiaan: Absensi Datang & Pulang Tepat Waktu
-                    â€¢ Energi: Lakukan kebiasaan 7 KAIH
-                    â€¢ Kesehatan: Kerjakan Tugas Literasi
+                    - Kenyang: Baca buku di E-Library (>1 jam)
+                    - Kebahagiaan: Absensi Datang & Pulang Tepat Waktu
+                    - Energi: Lakukan kebiasaan 7 KAIH
+                    - Kesehatan: Kerjakan Tugas Literasi
                 """.trimIndent(),
                 backgroundColor = Color(0xFF2196F3).copy(alpha = 0.2f),
                 borderColor = Color(0xFF2196F3),
@@ -804,7 +804,7 @@ fun LeaderboardTab(leaderboard: List<VirtualPet>, currentPetId: String) {
                             maxLines = 1
                         )
                         Text(
-                            text = "Level ${item.level} â€¢ ${item.experiencePoints} XP",
+                            text = "Level ${item.level} | ${item.experiencePoints} XP",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

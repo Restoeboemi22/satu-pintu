@@ -21,6 +21,14 @@ native-mobile/**/build/
 native-mobile/.externalNativeBuild/
 native-mobile/.cxx/
 native-mobile/captures/
+edulock-mobile/.gradle/
+edulock-mobile/.kotlin/
+edulock-mobile/local.properties
+edulock-mobile/**/build/
+edulock-mobile/.externalNativeBuild/
+edulock-mobile/.cxx/
+edulock-mobile/captures/
+edulock-mobile/scripts/node_modules/
 
 # Secrets and local environment files
 **/.env
@@ -37,6 +45,7 @@ native-mobile/captures/
 
 
 .vercel
+.vercel-auth/
 web/.vercel-global/
 web/.xdg-data/
 web/.xdg-config/

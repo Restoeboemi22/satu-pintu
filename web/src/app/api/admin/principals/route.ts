@@ -10,6 +10,7 @@ type PrincipalPayload = {
   name?: string;
   schoolId?: string;
   schoolName?: string;
+  npsn?: string;
   password?: string;
   isActive?: boolean;
 };
@@ -51,13 +52,14 @@ async function getExistingPrincipal(username: string) {
 
 async function getAllPrincipals() {
   const snapshot = await getGasAdminDb().ref("principal_accounts").get();
-  if (!snapshot.exists()) return [] as Array<{ username: string; name: string; schoolId: string; schoolName: string }>;
+  if (!snapshot.exists()) return [] as Array<{ username: string; name: string; schoolId: string; schoolName: string; npsn?: string }>;
 
   return Object.entries<any>(snapshot.val() || {}).map(([key, value]) => ({
     username: normalizePrincipalUsername(value?.username || key),
     name: normalizeText(value?.name),
     schoolId: normalizeText(value?.schoolId),
     schoolName: normalizeText(value?.schoolName),
+    npsn: normalizeText(value?.npsn) || undefined,
   }));
 }
 
@@ -68,6 +70,7 @@ async function upsertPrincipal(payload: PrincipalPayload, authorizationHeader?: 
   const username = normalizePrincipalUsername(payload.username);
   const schoolId = normalizeText(payload.schoolId);
   const schoolName = normalizeText(payload.schoolName);
+  const submittedNpsn = normalizeText(payload.npsn);
   const name = normalizeText(payload.name);
   const password = normalizeText(payload.password);
 
@@ -79,6 +82,8 @@ async function upsertPrincipal(payload: PrincipalPayload, authorizationHeader?: 
   }
 
   const existing = await getExistingPrincipal(username);
+  const schoolSnapshot = schoolId ? await getGasAdminDb().ref(`schools/${schoolId}`).get() : null;
+  const schoolNpsn = normalizeText(schoolSnapshot?.child("npsn").val()) || submittedNpsn;
   if (!existing && !password) {
     throw new Error("Password/NIP wajib diisi untuk akun baru.");
   }
@@ -88,6 +93,7 @@ async function upsertPrincipal(payload: PrincipalPayload, authorizationHeader?: 
     [`principal_accounts/${username}/name`]: name,
     [`principal_accounts/${username}/schoolId`]: schoolId,
     [`principal_accounts/${username}/schoolName`]: schoolName,
+    [`principal_accounts/${username}/npsn`]: schoolNpsn || null,
     [`principal_accounts/${username}/isActive`]: payload.isActive !== false,
     [`principal_accounts/${username}/updatedAt`]: now,
   };

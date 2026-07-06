@@ -95,12 +95,15 @@ class VirtualPetViewModel : ViewModel() {
                 repository.getVirtualPetByStudentId(resolution.studentKey, effectiveSchoolId).flatMapLatest { pet ->
                     if (pet == null) {
                         flow {
-                            createPet(resolution.studentKey, resolution.studentName)
+                            createPet(resolution.studentKey, resolution.studentName, effectiveSchoolId)
                         }
                     } else {
                         // Sync name if different
-                        if (pet.petName != resolution.studentName) {
-                            val updatedPet = pet.copy(petName = resolution.studentName)
+                        if (pet.petName != resolution.studentName || pet.schoolId.trim().lowercase() != effectiveSchoolId.trim().lowercase()) {
+                            val updatedPet = pet.copy(
+                                petName = resolution.studentName,
+                                schoolId = effectiveSchoolId
+                            )
                             repository.updateVirtualPet(updatedPet)
                         }
 
@@ -379,9 +382,10 @@ class VirtualPetViewModel : ViewModel() {
         }
     }
 
-    private suspend fun createPet(studentId: String, studentName: String) {
+    private suspend fun createPet(studentId: String, studentName: String, schoolId: String) {
         val newPet = VirtualPet(
             studentId = studentId,
+            schoolId = schoolId,
             petName = studentName,
             petType = "CAT",
             status = "HAPPY",

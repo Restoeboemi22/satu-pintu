@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useSettingsStore, AcademicYear } from "@/store/useSettingsStore";
-import { Save, Plus, Trash2, Check, School, Calendar, UserCog } from "lucide-react";
+import { Save, Plus, Trash2, Check, School, Calendar } from "lucide-react";
 
 export default function SettingsPage() {
   const { 
@@ -15,7 +15,7 @@ export default function SettingsPage() {
     deleteAcademicYear 
   } = useSettingsStore();
 
-  const [activeTab, setActiveTab] = useState<'identity' | 'academic' | 'account'>('identity');
+  const [activeTab, setActiveTab] = useState<'identity' | 'academic'>('identity');
   const [isEditingIdentity, setIsEditingIdentity] = useState(false);
   const [identityForm, setIdentityForm] = useState(schoolIdentity);
 
@@ -81,17 +81,6 @@ export default function SettingsPage() {
           >
             <Calendar className="h-4 w-4" />
             Tahun Ajaran
-          </button>
-          <button
-            onClick={() => setActiveTab('account')}
-            className={`${
-              activeTab === 'account'
-                ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-slate-400 hover:border-slate-600 hover:text-slate-300'
-            } whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium flex items-center gap-2`}
-          >
-            <UserCog className="h-4 w-4" />
-            Akun Admin
           </button>
         </nav>
       </div>
@@ -356,59 +345,6 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Akun Admin */}
-        {activeTab === 'account' && (
-          <div className="glass-effect-dark-card rounded-xl">
-            <div className="px-4 py-5 sm:p-6">
-              <h3 className="text-lg font-medium leading-6 text-slate-100 mb-4">Keamanan Akun</h3>
-              <div className="max-w-xl">
-                <div className="rounded-md bg-yellow-900/30 border border-yellow-600/50 p-4 mb-6">
-                  <div className="flex">
-                    <div className="ml-3">
-                      <h3 className="text-sm font-medium text-yellow-300">Perhatian</h3>
-                      <div className="mt-2 text-sm text-yellow-400">
-                        <p>
-                          Saat ini fitur manajemen akun admin masih dalam tahap pengembangan.
-                          Password default admin adalah: <code className="bg-slate-800 px-1 rounded">admin123</code>
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <form className="space-y-4 opacity-50 pointer-events-none">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300">Password Lama</label>
-                    <input
-                      type="password"
-                      className="mt-1 block w-full rounded-md border border-slate-600 bg-slate-800/50 px-3 py-2 text-slate-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300">Password Baru</label>
-                    <input
-                      type="password"
-                      className="mt-1 block w-full rounded-md border border-slate-600 bg-slate-800/50 px-3 py-2 text-slate-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300">Konfirmasi Password Baru</label>
-                    <input
-                      type="password"
-                      className="mt-1 block w-full rounded-md border border-slate-600 bg-slate-800/50 px-3 py-2 text-slate-100 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="inline-flex justify-center rounded-md border border-transparent bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                  >
-                    Update Password
-                  </button>
-                </form>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

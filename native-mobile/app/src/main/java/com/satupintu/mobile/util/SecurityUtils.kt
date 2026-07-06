@@ -143,6 +143,10 @@ object SecurityUtils {
         return normalizeScope(prefs.getString("user_boundary", ""))
     }
 
+    fun isOsisStaffAccessEnabled(prefs: SharedPreferences): Boolean {
+        return prefs.getBoolean("user_is_osis_staff", false)
+    }
+
     fun isRoleAllowedForFlavor(role: String, flavor: String): Boolean {
         val normalizedRole = normalizeScope(role)
         return when (normalizeScope(flavor)) {
@@ -206,9 +210,10 @@ object SecurityUtils {
         return hasTestKeys || hasSu || emulatorSignals || Debug.isDebuggerConnected()
     }
 
-    fun isRouteAllowed(route: String, role: String, flavor: String): Boolean {
+    fun isRouteAllowed(route: String, role: String, flavor: String, prefs: SharedPreferences? = null): Boolean {
         val normalizedRole = role.trim().lowercase()
         val normalizedFlavor = flavor.trim().lowercase()
+        val osisEnabled = prefs?.let { isOsisStaffAccessEnabled(it) } == true
         return when (route) {
             "home", "profile", "tasks" -> when (normalizedFlavor) {
                 "siswa" -> normalizedRole == "student"
@@ -219,7 +224,8 @@ object SecurityUtils {
             "attendance", "library", "tools", "tools_english_dictionary", "tools_javanese_dictionary", "discipline", "virtual_pet", "seven_habits", "prayer", "halo_spentgapa", "notifications" ->
                 normalizedFlavor == "siswa" && normalizedRole == "student"
             "osis_discipline" ->
-                normalizedFlavor == "guru" && normalizedRole == "staff"
+                (normalizedFlavor == "guru" && normalizedRole == "staff") ||
+                    (normalizedFlavor == "siswa" && normalizedRole == "student" && osisEnabled)
             "teacher_student_list", "teacher_attendance", "teacher_prayer", "teacher_discipline", "teacher_literacy", "teacher_bullying_reports", "teacher_notifications", "teacher_seven_habits" ->
                 normalizedFlavor == "guru" && normalizedRole == "teacher"
             "principal_attendance", "principal_literacy", "principal_prayer", "principal_seven_habits", "principal_discipline", "principal_bullying" ->
@@ -228,4 +234,3 @@ object SecurityUtils {
         }
     }
 }
-

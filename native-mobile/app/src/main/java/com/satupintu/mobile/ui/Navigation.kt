@@ -68,6 +68,17 @@ fun AppNavigation() {
         }
     }
 
+    val initialRole = prefs.getString("user_role", "") ?: ""
+    val initialBoundaryOk = SecurityUtils.isFirebaseProjectAllowed(SecurityUtils.getActiveFirebaseProjectId())
+    val initialSessionValid = SecurityUtils.isSessionConsistent(prefs, flavor)
+    val initialSessionExpired = SecurityUtils.isSessionExpired(prefs)
+    val initialHomeAllowed = SecurityUtils.isRouteAllowed("home", initialRole, flavor, prefs)
+    val startDestination = if (initialBoundaryOk && !initialSessionExpired && initialSessionValid && initialHomeAllowed) {
+        "home"
+    } else {
+        "login"
+    }
+
     DisposableEffect(sessionRole, sessionSchoolId, authUid) {
         val schoolScopedRoles = setOf("student", "teacher", "staff", "principal")
         if (authUid.isBlank() || sessionSchoolId.isBlank() || sessionRole !in schoolScopedRoles) {
@@ -108,7 +119,7 @@ fun AppNavigation() {
         val expired = SecurityUtils.isSessionExpired(prefs)
         val sessionValid = SecurityUtils.isSessionConsistent(prefs, flavor)
         val boundaryOk = SecurityUtils.isFirebaseProjectAllowed(SecurityUtils.getActiveFirebaseProjectId())
-        val allowed = boundaryOk && !expired && sessionValid && SecurityUtils.isRouteAllowed(route, role, flavor)
+        val allowed = boundaryOk && !expired && sessionValid && SecurityUtils.isRouteAllowed(route, role, flavor, prefs)
 
         LaunchedEffect(route, role, expired, sessionValid, boundaryOk) {
             if (!allowed) {
@@ -137,8 +148,22 @@ fun AppNavigation() {
         }
     }
 
-    NavHost(navController = navController, startDestination = "login") {
+    NavHost(navController = navController, startDestination = startDestination) {
         composable("login") {
+            val currentRole = prefs.getString("user_role", "") ?: ""
+            val canResumeSession = SecurityUtils.isFirebaseProjectAllowed(SecurityUtils.getActiveFirebaseProjectId()) &&
+                !SecurityUtils.isSessionExpired(prefs) &&
+                SecurityUtils.isSessionConsistent(prefs, flavor) &&
+                SecurityUtils.isRouteAllowed("home", currentRole, flavor, prefs)
+
+            LaunchedEffect(canResumeSession) {
+                if (canResumeSession) {
+                    navController.navigate("home") {
+                        popUpTo("login") { inclusive = true }
+                    }
+                }
+            }
+
             LoginScreen(
                 onLoginSuccess = {
                     navController.navigate("home") { popUpTo("login") { inclusive = true } }

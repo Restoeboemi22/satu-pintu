@@ -15,6 +15,14 @@ import java.util.UUID
 class VirtualPetRepository {
     private val db = FirebaseDatabase.getInstance().reference
     private fun normalizeScope(value: String?): String = value?.trim()?.lowercase().orEmpty()
+    private fun rankPetCandidate(pet: VirtualPet): Long {
+        return maxOf(
+            pet.updatedAt,
+            pet.lastQuestReset,
+            pet.lastPlayed,
+            pet.lastFed
+        )
+    }
 
     private fun parsePet(snapshot: DataSnapshot): VirtualPet? {
         return try {
@@ -27,18 +35,28 @@ class VirtualPetRepository {
 
     fun getVirtualPetByStudentId(studentId: String, schoolId: String = ""): Flow<VirtualPet?> = callbackFlow {
         val normalizedSchoolId = normalizeScope(schoolId)
-        val ref = db.child("virtual_pets").orderByChild("studentId").equalTo(studentId)
+        val normalizedStudentId = studentId.trim()
+        val ref = db.child("virtual_pets")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                var pet: VirtualPet? = null
+                val exactMatches = mutableListOf<VirtualPet>()
+                val legacyMatches = mutableListOf<VirtualPet>()
                 for (child in snapshot.children) {
                     val parsedPet = parsePet(child)
-                    if (parsedPet != null && (normalizedSchoolId.isBlank() || normalizeScope(parsedPet.schoolId) == normalizedSchoolId)) {
-                        pet = parsedPet
+                    if (parsedPet == null || parsedPet.studentId.trim() != normalizedStudentId) {
+                        continue
                     }
-                    if (pet != null) break
+
+                    val petSchoolId = normalizeScope(parsedPet.schoolId)
+                    when {
+                        normalizedSchoolId.isBlank() || petSchoolId == normalizedSchoolId -> exactMatches.add(parsedPet)
+                        petSchoolId.isBlank() -> legacyMatches.add(parsedPet)
+                    }
                 }
-                trySend(pet)
+
+                val chosenPet = (exactMatches.maxByOrNull(::rankPetCandidate)
+                    ?: legacyMatches.maxByOrNull(::rankPetCandidate))
+                trySend(chosenPet)
             }
 
             override fun onCancelled(error: DatabaseError) {
@@ -51,11 +69,7 @@ class VirtualPetRepository {
 
     fun getAllPets(schoolId: String = ""): Flow<List<VirtualPet>> = callbackFlow {
         val normalizedSchoolId = normalizeScope(schoolId)
-        val ref = if (normalizedSchoolId.isBlank()) {
-            db.child("virtual_pets")
-        } else {
-            db.child("virtual_pets").orderByChild("schoolId").equalTo(normalizedSchoolId)
-        }
+        val ref = db.child("virtual_pets")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val pets = mutableListOf<VirtualPet>()
@@ -89,13 +103,14 @@ class VirtualPetRepository {
     }
 
     fun getPetQuests(petId: String): Flow<List<PetQuest>> = callbackFlow {
-        val ref = db.child("pet_quests").orderByChild("petId").equalTo(petId)
+        val normalizedPetId = petId.trim()
+        val ref = db.child("pet_quests")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val quests = mutableListOf<PetQuest>()
                 for (child in snapshot.children) {
                     val quest = child.getValue(PetQuest::class.java)
-                    if (quest != null) {
+                    if (quest != null && quest.petId.trim() == normalizedPetId) {
                         quests.add(quest)
                     }
                 }
@@ -215,11 +230,7 @@ class VirtualPetRepository {
 
     fun getRealtimeLiteracyCount(studentId: String, studentName: String, schoolId: String = ""): Flow<Int> = callbackFlow {
         val normalizedSchoolId = normalizeScope(schoolId)
-        val ref = if (normalizedSchoolId.isBlank()) {
-            db.child("literacy_logs")
-        } else {
-            db.child("literacy_logs").orderByChild("schoolId").equalTo(normalizedSchoolId)
-        }
+        val ref = db.child("literacy_logs")
 
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
@@ -249,11 +260,15 @@ class VirtualPetRepository {
     }
 
     fun deletePetQuests(petId: String) {
-        val ref = db.child("pet_quests").orderByChild("petId").equalTo(petId)
+        val normalizedPetId = petId.trim()
+        val ref = db.child("pet_quests")
         ref.addListenerForSingleValueEvent(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 for (child in snapshot.children) {
-                    child.ref.removeValue()
+                    val questPetId = child.child("petId").getValue(String::class.java).orEmpty().trim()
+                    if (questPetId == normalizedPetId) {
+                        child.ref.removeValue()
+                    }
                 }
             }
             override fun onCancelled(error: DatabaseError) {}
@@ -261,13 +276,14 @@ class VirtualPetRepository {
     }
 
     fun getPetAchievements(petId: String): Flow<List<PetAchievement>> = callbackFlow {
-        val ref = db.child("pet_achievements").orderByChild("petId").equalTo(petId)
+        val normalizedPetId = petId.trim()
+        val ref = db.child("pet_achievements")
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val achievements = mutableListOf<PetAchievement>()
                 for (child in snapshot.children) {
                     val achievement = child.getValue(PetAchievement::class.java)
-                    if (achievement != null) {
+                    if (achievement != null && achievement.petId.trim() == normalizedPetId) {
                         achievements.add(achievement)
                     }
                 }
