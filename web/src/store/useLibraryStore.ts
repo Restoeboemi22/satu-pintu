@@ -96,6 +96,8 @@ interface LibraryState {
   initLiteracyReportSync: () => () => void;
   createLiteracyTask: (task: Omit<LiteracyTask, "id">) => Promise<void>;
   toggleTaskStatus: (taskId: string, isActive: boolean) => Promise<void>;
+  updateLiteracyTask: (taskId: string, task: Pick<LiteracyTask, "title" | "description" | "points" | "durationMinutes">) => Promise<void>;
+  deleteLiteracyTask: (taskId: string) => Promise<void>;
   fetchPortalTasks: () => Promise<Array<Omit<LiteracyTask, "id" | "createdAt" | "isActive"> & { id: string }>>;
   deleteFromInbox: (inboxId: string) => Promise<void>;
 }
@@ -553,6 +555,38 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       action: "toggle-task-status",
       taskId,
       isActive,
+    });
+  },
+
+  updateLiteracyTask: async (taskId, task) => {
+    if (hasEduLockAdminSession()) {
+      await callAdminApi("/api/admin/library", "POST", {
+        action: "update-task",
+        taskId,
+        task,
+      });
+      return;
+    }
+
+    await callPortalApi("/api/portal/library", "POST", {
+      action: "update-task",
+      taskId,
+      task,
+    });
+  },
+
+  deleteLiteracyTask: async (taskId) => {
+    if (hasEduLockAdminSession()) {
+      await callAdminApi("/api/admin/library", "POST", {
+        action: "delete-task",
+        taskId,
+      });
+      return;
+    }
+
+    await callPortalApi("/api/portal/library", "POST", {
+      action: "delete-task",
+      taskId,
     });
   },
 

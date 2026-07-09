@@ -9,7 +9,9 @@ type LibraryPayload = {
     | "submit-report"
     | "review-report"
     | "create-task"
-    | "toggle-task-status";
+    | "toggle-task-status"
+    | "update-task"
+    | "delete-task";
   studentId?: string;
   bookId?: string;
   recordId?: string;
@@ -223,6 +225,54 @@ async function toggleTaskStatus(payload: LibraryPayload) {
   await taskRef.update({ isActive: payload.isActive === true });
 }
 
+async function updateTask(payload: LibraryPayload) {
+  const session = requirePortalSession(["teacher"]);
+  const schoolId = normalizeSchoolId(session.user.schoolId);
+  await getTeacherContext(session.user.nuptk || session.user.id, schoolId);
+
+  const taskId = normalizeText(payload.taskId);
+  if (!taskId) throw new Error("taskId wajib diisi.");
+
+  const taskRef = getGasAdminDb().ref(`literacy_tasks/${taskId}`);
+  const taskSnap = await taskRef.get();
+  if (!taskSnap.exists()) throw new Error("Tugas literasi tidak ditemukan.");
+  const existingTask = taskSnap.val() || {};
+  if (normalizeSchoolId(existingTask.schoolId) !== schoolId) {
+    throw new Error("Tugas berasal dari sekolah lain.");
+  }
+
+  const task = payload.task || {};
+  const title = normalizeText(task.title);
+  const description = normalizeText(task.description);
+  if (!title || !description) throw new Error("Judul dan deskripsi tugas wajib diisi.");
+
+  await taskRef.update({
+    title,
+    description,
+    points: Number(task.points || 0),
+    durationMinutes: Number(task.durationMinutes || 0),
+  });
+}
+
+async function deleteTask(payload: LibraryPayload) {
+  const session = requirePortalSession(["teacher"]);
+  const schoolId = normalizeSchoolId(session.user.schoolId);
+  await getTeacherContext(session.user.nuptk || session.user.id, schoolId);
+
+  const taskId = normalizeText(payload.taskId);
+  if (!taskId) throw new Error("taskId wajib diisi.");
+
+  const taskRef = getGasAdminDb().ref(`literacy_tasks/${taskId}`);
+  const taskSnap = await taskRef.get();
+  if (!taskSnap.exists()) throw new Error("Tugas literasi tidak ditemukan.");
+  const task = taskSnap.val() || {};
+  if (normalizeSchoolId(task.schoolId) !== schoolId) {
+    throw new Error("Tugas berasal dari sekolah lain.");
+  }
+
+  await taskRef.remove();
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as LibraryPayload;
@@ -249,6 +299,14 @@ export async function POST(request: NextRequest) {
     if (body.action === "toggle-task-status") {
       await toggleTaskStatus(body);
       return NextResponse.json({ success: true, message: "Status tugas literasi berhasil diubah." });
+    }
+    if (body.action === "update-task") {
+      await updateTask(body);
+      return NextResponse.json({ success: true, message: "Tugas literasi berhasil diperbarui." });
+    }
+    if (body.action === "delete-task") {
+      await deleteTask(body);
+      return NextResponse.json({ success: true, message: "Tugas literasi berhasil dihapus." });
     }
 
     return NextResponse.json(

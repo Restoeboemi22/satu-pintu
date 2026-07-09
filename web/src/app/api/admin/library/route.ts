@@ -10,7 +10,9 @@ type LibraryPayload = {
     | "submit-report"
     | "review-report"
     | "create-task"
-    | "toggle-task-status";
+    | "toggle-task-status"
+    | "update-task"
+    | "delete-task";
   schoolId?: string;
   studentId?: string;
   bookId?: string;
@@ -280,6 +282,82 @@ async function toggleTaskStatus(payload: LibraryPayload, authorizationHeader?: s
   });
 }
 
+async function updateTask(payload: LibraryPayload, authorizationHeader?: string | null) {
+  const taskId = normalizeText(payload.taskId);
+  if (!taskId) throw new Error("taskId wajib diisi.");
+
+  const taskRef = getGasAdminDb().ref(`literacy_tasks/${taskId}`);
+  const taskSnap = await taskRef.get();
+  if (!taskSnap.exists()) {
+    throw new Error("Tugas literasi tidak ditemukan.");
+  }
+
+  const existingTask = taskSnap.val() || {};
+  const context = await enforceAdminCapability(authorizationHeader, "library.write", {
+    requestedSchoolId: normalizeSchoolId(existingTask.schoolId || payload.schoolId),
+  });
+  if (normalizeSchoolId(existingTask.schoolId) !== context.schoolId) {
+    throw new Error("Tugas literasi berasal dari sekolah lain.");
+  }
+
+  const task = payload.task || {};
+  const title = normalizeText(task.title);
+  const description = normalizeText(task.description);
+  if (!title || !description) {
+    throw new Error("Judul dan deskripsi tugas wajib diisi.");
+  }
+
+  await taskRef.update({
+    title,
+    description,
+    points: Number(task.points || 0),
+    durationMinutes: Number(task.durationMinutes || 0),
+  });
+
+  await writeEduLockAuditEvent(context.profile, {
+    type: "LIBRARY_TASK_UPDATE",
+    message: `Memperbarui tugas literasi ${taskId}.`,
+    schoolId: context.schoolId,
+    targetId: taskId,
+    metadata: {
+      title,
+      points: Number(task.points || 0),
+      durationMinutes: Number(task.durationMinutes || 0),
+    },
+  });
+}
+
+async function deleteTask(payload: LibraryPayload, authorizationHeader?: string | null) {
+  const taskId = normalizeText(payload.taskId);
+  if (!taskId) throw new Error("taskId wajib diisi.");
+
+  const taskRef = getGasAdminDb().ref(`literacy_tasks/${taskId}`);
+  const taskSnap = await taskRef.get();
+  if (!taskSnap.exists()) {
+    throw new Error("Tugas literasi tidak ditemukan.");
+  }
+
+  const task = taskSnap.val() || {};
+  const context = await enforceAdminCapability(authorizationHeader, "library.write", {
+    requestedSchoolId: normalizeSchoolId(task.schoolId || payload.schoolId),
+  });
+  if (normalizeSchoolId(task.schoolId) !== context.schoolId) {
+    throw new Error("Tugas literasi berasal dari sekolah lain.");
+  }
+
+  await taskRef.remove();
+
+  await writeEduLockAuditEvent(context.profile, {
+    type: "LIBRARY_TASK_DELETE",
+    message: `Menghapus tugas literasi ${taskId}.`,
+    schoolId: context.schoolId,
+    targetId: taskId,
+    metadata: {
+      title: normalizeText(task.title),
+    },
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as LibraryPayload;
@@ -308,6 +386,14 @@ export async function POST(request: NextRequest) {
     if (body.action === "toggle-task-status") {
       await toggleTaskStatus(body, authorizationHeader);
       return NextResponse.json({ success: true, message: "Status tugas literasi berhasil diubah." });
+    }
+    if (body.action === "update-task") {
+      await updateTask(body, authorizationHeader);
+      return NextResponse.json({ success: true, message: "Tugas literasi berhasil diperbarui." });
+    }
+    if (body.action === "delete-task") {
+      await deleteTask(body, authorizationHeader);
+      return NextResponse.json({ success: true, message: "Tugas literasi berhasil dihapus." });
     }
 
     return NextResponse.json(

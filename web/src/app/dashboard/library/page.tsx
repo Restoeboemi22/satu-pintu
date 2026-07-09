@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { Book, BookOpen, Clock, AlertCircle, ExternalLink, FileText, Printer, Download, Plus, Check, X, Calendar, Trash2, ArrowLeft, Star, MessageCircle, RefreshCw, BarChart3 } from "lucide-react";
+import { Book, BookOpen, Clock, AlertCircle, ExternalLink, FileText, Printer, Download, Plus, Check, X, Calendar, Trash2, ArrowLeft, Star, MessageCircle, RefreshCw, BarChart3, Pencil } from "lucide-react";
 import { useLibraryStore, LiteracyReport, LiteracyTask } from "@/store/useLibraryStore";
 import { useStudentStore } from "@/store/useStudentStore";
 import { useClassStore } from "@/store/useClassStore";
@@ -48,6 +48,12 @@ type LiteracyActivityLog = {
   timestamp: number;
 };
 
+const ADMIN_TASK_ROUTE_MAP: Record<AdminTaskView, string> = {
+  tasks: "/dashboard/library/tasks",
+  "needs-grading": "/dashboard/library/tasks/needs-grading",
+  history: "/dashboard/library/tasks/history",
+};
+
 const LIBRARY_MONTHS = [
   "Januari", "Februari", "Maret", "April", "Mei", "Juni",
   "Juli", "Agustus", "September", "Oktober", "November", "Desember"
@@ -82,7 +88,7 @@ function LibraryPageContent(props: LibraryPageProps = {}) {
   const dropdownOptionStyle = { backgroundColor: "#020617", color: "#f8fafc" };
   const { user, _hasHydrated } = useAuthStore();
   const { taskDefaults, loading: settingsLoading } = useSettingsStore();
-  const { books, borrowRecords, literacyReports, literacyTasks, reviewLiteracyReport, initBooksSync, initBorrowRecordSync, initLiteracyTaskSync, initLiteracyReportSync, createLiteracyTask, toggleTaskStatus, addLiteracyReport, borrowBook } = useLibraryStore();
+  const { books, borrowRecords, literacyReports, literacyTasks, reviewLiteracyReport, initBooksSync, initBorrowRecordSync, initLiteracyTaskSync, initLiteracyReportSync, createLiteracyTask, toggleTaskStatus, updateLiteracyTask, deleteLiteracyTask, addLiteracyReport, borrowBook } = useLibraryStore();
   const { students } = useStudentStore();
   const { classes } = useClassStore();
   
@@ -132,6 +138,7 @@ function LibraryPageContent(props: LibraryPageProps = {}) {
   const [newTaskDesc, setNewTaskDesc] = useState("");
   const [newTaskPoints, setNewTaskPoints] = useState(30);
   const [newTaskDuration, setNewTaskDuration] = useState(45);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const isAdminPanel = user?.role === 'admin';
   const isAdminLentera = pathname === "/admin/lentera";
 
@@ -179,6 +186,24 @@ function LibraryPageContent(props: LibraryPageProps = {}) {
     if (!props?.initialAdminTaskView) return;
     setAdminTaskView(props.initialAdminTaskView);
   }, [props?.initialAdminTaskView]);
+
+  useEffect(() => {
+    const currentPath = String(pathname || "").trim();
+    if (currentPath === ADMIN_TASK_ROUTE_MAP.tasks) {
+      setActiveTab("tasks");
+      setAdminTaskView("tasks");
+      return;
+    }
+    if (currentPath === ADMIN_TASK_ROUTE_MAP["needs-grading"]) {
+      setActiveTab("tasks");
+      setAdminTaskView("needs-grading");
+      return;
+    }
+    if (currentPath === ADMIN_TASK_ROUTE_MAP.history) {
+      setActiveTab("tasks");
+      setAdminTaskView("history");
+    }
+  }, [pathname]);
 
   useEffect(() => {
     const tab = String(searchParams.get("tab") || "").trim();
@@ -325,24 +350,64 @@ function LibraryPageContent(props: LibraryPageProps = {}) {
     }
   }, [props?.initialTab, user]);
 
-  const handleCreateTask = async (asDraft: boolean = true) => {
-    if (!newTaskTitle || !newTaskDesc) return;
-    
-    await createLiteracyTask({
-      title: newTaskTitle,
-      description: newTaskDesc,
-      points: newTaskPoints,
-      durationMinutes: newTaskDuration,
-      isActive: !asDraft,
-      createdAt: Date.now()
-    });
-
-    setShowTaskModal(false);
+  const resetTaskForm = () => {
+    setEditingTaskId(null);
     setNewTaskTitle("");
     setNewTaskDesc("");
     setNewTaskPoints(taskDefaults.defaultPoints);
     setNewTaskDuration(taskDefaults.defaultDurationMinutes);
-    toast.success("Tugas literasi berhasil dibuat");
+  };
+
+  const handleCreateTask = async (asDraft: boolean = true) => {
+    if (!newTaskTitle || !newTaskDesc) return;
+
+    try {
+      if (editingTaskId) {
+        await updateLiteracyTask(editingTaskId, {
+          title: newTaskTitle,
+          description: newTaskDesc,
+          points: newTaskPoints,
+          durationMinutes: newTaskDuration,
+        });
+        toast.success("Tugas literasi berhasil diperbarui");
+      } else {
+        await createLiteracyTask({
+          title: newTaskTitle,
+          description: newTaskDesc,
+          points: newTaskPoints,
+          durationMinutes: newTaskDuration,
+          isActive: !asDraft,
+          createdAt: Date.now()
+        });
+        toast.success("Tugas literasi berhasil dibuat");
+      }
+
+      setShowTaskModal(false);
+      resetTaskForm();
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal menyimpan tugas literasi.");
+    }
+  };
+
+  const openTaskModalForEdit = (task: LiteracyTask) => {
+    setEditingTaskId(task.id);
+    setNewTaskTitle(task.title);
+    setNewTaskDesc(task.description);
+    setNewTaskPoints(task.points);
+    setNewTaskDuration(task.durationMinutes);
+    setShowTaskModal(true);
+  };
+
+  const handleDeleteTask = async (task: LiteracyTask) => {
+    const confirmed = window.confirm(`Hapus tugas "${task.title}"? Tindakan ini tidak dapat dibatalkan.`);
+    if (!confirmed) return;
+
+    try {
+      await deleteLiteracyTask(task.id);
+      toast.success("Tugas literasi berhasil dihapus");
+    } catch (error: any) {
+      toast.error(error?.message || "Gagal menghapus tugas literasi.");
+    }
   };
 
   const openGradeModal = (report: EnrichedLiteracyReport) => {
@@ -419,6 +484,33 @@ function LibraryPageContent(props: LibraryPageProps = {}) {
       : adminTaskView === 'needs-grading'
         ? 'Daftar laporan literasi siswa yang masih menunggu penilaian.'
         : 'Riwayat laporan literasi yang sudah selesai dinilai.';
+  const navigateToLibraryTab = (tab: 'loans' | 'literacy' | 'tasks' | 'stats') => {
+    if (user?.role !== "admin" || isAdminLentera) {
+      setActiveTab(tab);
+      return;
+    }
+
+    if (tab === "tasks") {
+      router.push(ADMIN_TASK_ROUTE_MAP[adminTaskView]);
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set("tab", tab);
+    if (tab === "literacy") {
+      params.set("view", adminLiteracyTab);
+    }
+    router.push(`/dashboard/library?${params.toString()}`);
+  };
+  const navigateToAdminTaskView = (view: AdminTaskView) => {
+    if (user?.role !== "admin" || isAdminLentera) {
+      setAdminTaskView(view);
+      setActiveTab("tasks");
+      return;
+    }
+
+    router.push(ADMIN_TASK_ROUTE_MAP[view]);
+  };
 
   // Enrich Records with Student & Book Data
   const enrichedRecords = visibleBorrowRecords
@@ -1346,7 +1438,7 @@ function LibraryPageContent(props: LibraryPageProps = {}) {
       <div className="border-b border-slate-700 print:hidden">
         <nav className="-mb-px flex space-x-8" aria-label="Tabs">
           <button
-            onClick={() => setActiveTab('loans')}
+            onClick={() => navigateToLibraryTab('loans')}
             className={`
               flex items-center gap-2 border-b-2 py-4 px-1 text-sm font-medium transition-colors
               ${activeTab === 'loans'
@@ -1359,7 +1451,7 @@ function LibraryPageContent(props: LibraryPageProps = {}) {
             Peminjaman Buku
           </button>
           <button
-            onClick={() => setActiveTab('literacy')}
+            onClick={() => navigateToLibraryTab('literacy')}
             className={`
               flex items-center gap-2 border-b-2 py-4 px-1 text-sm font-medium transition-colors
               ${activeTab === 'literacy'
@@ -1375,7 +1467,7 @@ function LibraryPageContent(props: LibraryPageProps = {}) {
             </span>
           </button>
           <button
-            onClick={() => setActiveTab('tasks')}
+            onClick={() => navigateToLibraryTab('tasks')}
             className={`
               flex items-center gap-2 border-b-2 py-4 px-1 text-sm font-medium transition-colors
               ${activeTab === 'tasks'
@@ -1389,7 +1481,7 @@ function LibraryPageContent(props: LibraryPageProps = {}) {
           </button>
           {isAdminPanel && (
             <button
-              onClick={() => setActiveTab('stats')}
+              onClick={() => navigateToLibraryTab('stats')}
               className={`
                 flex items-center gap-2 border-b-2 py-4 px-1 text-sm font-medium transition-colors
                 ${activeTab === 'stats'
@@ -2342,7 +2434,10 @@ function LibraryPageContent(props: LibraryPageProps = {}) {
                 )}
                 {adminTaskView === 'tasks' && (
                   <button
-                    onClick={() => setShowTaskModal(true)}
+                    onClick={() => {
+                      resetTaskForm();
+                      setShowTaskModal(true);
+                    }}
                     className="inline-flex items-center justify-center gap-2 rounded-md bg-pink-600 px-4 py-2 text-sm font-medium text-white hover:bg-pink-700"
                   >
                     <Plus className="w-4 h-4" />
@@ -2350,6 +2445,38 @@ function LibraryPageContent(props: LibraryPageProps = {}) {
                   </button>
                 )}
               </div>
+            </div>
+            <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-700/60 pb-4">
+              <button
+                onClick={() => navigateToAdminTaskView('tasks')}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                  adminTaskView === 'tasks'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-900/60 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                Daftar Tugas
+              </button>
+              <button
+                onClick={() => navigateToAdminTaskView('needs-grading')}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                  adminTaskView === 'needs-grading'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-900/60 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                Perlu Dinilai
+              </button>
+              <button
+                onClick={() => navigateToAdminTaskView('history')}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                  adminTaskView === 'history'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-900/60 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                Riwayat
+              </button>
             </div>
             {adminTaskView === 'tasks' ? (
               literacyTasks.length > 0 ? (
@@ -2409,22 +2536,38 @@ function LibraryPageContent(props: LibraryPageProps = {}) {
                             })}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <button
-                              onClick={async () => {
-                                try {
-                                  await toggleTaskStatus(task.id, !task.isActive);
-                                } catch (error: any) {
-                                  toast.error(error?.message || "Gagal mengubah status tugas.");
-                                }
-                              }}
-                              className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
-                                task.isActive
-                                  ? 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-100'
-                                  : 'bg-blue-600 text-white hover:bg-blue-700'
-                              }`}
-                            >
-                              {task.isActive ? 'Tarik Kembali' : 'Terbitkan'}
-                            </button>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                onClick={() => openTaskModalForEdit(task)}
+                                className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs font-bold text-blue-200 transition-colors hover:bg-blue-500/20"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                Edit
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await toggleTaskStatus(task.id, !task.isActive);
+                                  } catch (error: any) {
+                                    toast.error(error?.message || "Gagal mengubah status tugas.");
+                                  }
+                                }}
+                                className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                                  task.isActive
+                                    ? 'bg-red-50 text-red-600 hover:bg-red-100 border border-red-100'
+                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                }`}
+                              >
+                                {task.isActive ? 'Tarik Kembali' : 'Terbitkan'}
+                              </button>
+                              <button
+                                onClick={() => handleDeleteTask(task)}
+                                className="inline-flex items-center gap-1 rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-bold text-red-200 transition-colors hover:bg-red-500/20"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Hapus
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -2566,11 +2709,20 @@ function LibraryPageContent(props: LibraryPageProps = {}) {
           <div className="glass-effect-dark-card rounded-lg shadow-xl max-w-lg w-full p-6">
             <div className="flex justify-between items-start mb-4">
               <div>
-                <h3 className="text-lg font-bold text-slate-100">Buat Tugas Literasi</h3>
-                <p className="text-sm text-slate-400">Tugas ini akan masuk ke Lentera Digital siswa sesuai sekolah yang sedang login.</p>
+                <h3 className="text-lg font-bold text-slate-100">
+                  {editingTaskId ? 'Edit Tugas Literasi' : 'Buat Tugas Literasi'}
+                </h3>
+                <p className="text-sm text-slate-400">
+                  {editingTaskId
+                    ? 'Perbarui detail tugas tanpa mengubah sekolah dan histori penerbitannya.'
+                    : 'Tugas ini akan masuk ke Lentera Digital siswa sesuai sekolah yang sedang login.'}
+                </p>
               </div>
               <button 
-                onClick={() => setShowTaskModal(false)}
+                onClick={() => {
+                  setShowTaskModal(false);
+                  resetTaskForm();
+                }}
                 className="text-gray-400 hover:text-slate-400"
               >
                 <span className="sr-only">Close</span>
@@ -2626,17 +2778,19 @@ function LibraryPageContent(props: LibraryPageProps = {}) {
               </div>
 
               <div className="mt-6 flex gap-3 border-t border-white/10 pt-4">
-                <button
-                  onClick={() => handleCreateTask(true)}
-                  className="flex-1 rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-2 text-slate-200 font-medium hover:bg-slate-900/70 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                >
-                  Simpan sebagai Draft
-                </button>
+                {!editingTaskId && (
+                  <button
+                    onClick={() => handleCreateTask(true)}
+                    className="flex-1 rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-2 text-slate-200 font-medium hover:bg-slate-900/70 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  >
+                    Simpan sebagai Draft
+                  </button>
+                )}
                 <button
                   onClick={() => handleCreateTask(false)}
                   className="flex-1 rounded-xl bg-blue-600 px-4 py-2 text-white font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                 >
-                  Kirim ke Siswa
+                  {editingTaskId ? 'Simpan Perubahan' : 'Kirim ke Siswa'}
                 </button>
               </div>
             </div>
