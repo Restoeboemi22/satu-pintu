@@ -219,6 +219,41 @@ async function deleteTeacher(payload: PersonnelPayload, authorizationHeader?: st
   });
 }
 
+async function resetTeacherDevice(payload: PersonnelPayload, authorizationHeader?: string | null) {
+  const profile = await requireEduLockAdminProfile(authorizationHeader);
+  const nuptk = normalizeText(payload.nuptk);
+  if (!nuptk) {
+    throw new Error("NUPTK wajib diisi.");
+  }
+
+  const existingTeacher = await getExistingTeacher(nuptk);
+  if (!existingTeacher) {
+    throw new Error("Data guru tidak ditemukan.");
+  }
+
+  if (profile.role === "admin" && normalizeText(existingTeacher.schoolId) !== profile.schoolId) {
+    throw new Error("Guru berada di luar tenant admin aktif.");
+  }
+
+  const now = Date.now();
+  await getGasAdminDb().ref().update({
+    [`master_teachers/${nuptk}/deviceId`]: null,
+    [`master_teachers/${nuptk}/device`]: null,
+    [`master_teachers/${nuptk}/updatedAt`]: now,
+    [`teachers/${nuptk}/deviceId`]: null,
+    [`teachers/${nuptk}/device`]: null,
+    [`teachers/${nuptk}/updatedAt`]: now,
+  });
+
+  await writeEduLockAuditEvent(profile, {
+    type: "PERSONNEL_TEACHER_RESET_DEVICE",
+    message: `Mereset device guru: ${existingTeacher.name || nuptk}`,
+    schoolId: existingTeacher.schoolId,
+    targetId: nuptk,
+    metadata: { name: existingTeacher.name, className: existingTeacher.class },
+  });
+}
+
 async function createStaff(payload: PersonnelPayload, authorizationHeader?: string | null) {
   const profile = await requireEduLockAdminProfile(authorizationHeader);
   const nisn = normalizeText(payload.nisn);
@@ -510,6 +545,10 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const body = (await request.json()) as PersonnelPayload;
+    if (body.entity === "teacher" && body.action === "reset-device") {
+      await resetTeacherDevice(body, request.headers.get("authorization"));
+      return NextResponse.json({ success: true, message: "Device guru berhasil direset." });
+    }
     if (body.entity === "teacher") {
       await deleteTeacher(body, request.headers.get("authorization"));
       return NextResponse.json({ success: true, message: "Guru berhasil dihapus." });

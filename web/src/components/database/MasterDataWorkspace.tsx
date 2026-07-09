@@ -18,6 +18,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Smartphone,
   Trash2,
   Users,
 } from "lucide-react";
@@ -42,6 +43,7 @@ type TeacherRow = {
   name: string;
   class: string;
   status?: "Aktif" | "Nonaktif" | "";
+  deviceId?: string;
   schoolId?: string;
   schoolName?: string;
   npsn?: string;
@@ -1379,6 +1381,7 @@ function MasterStudentsContent() {
             name: String(obj?.name || ""),
             class: String(obj?.class || obj?.homeroomClass || ""),
             status: obj?.status === "Nonaktif" ? "Nonaktif" : "Aktif",
+            deviceId: obj?.deviceId ? String(obj.deviceId) : obj?.device ? String(obj.device) : "",
             schoolId: obj?.schoolId ? String(obj.schoolId) : undefined,
             schoolName: obj?.schoolName ? String(obj.schoolName) : undefined,
             npsn: obj?.npsn ? String(obj.npsn) : undefined,
@@ -1882,6 +1885,35 @@ function MasterStudentsContent() {
       setStatus({ type: "success", text: "Guru berhasil dihapus." });
     } catch (e: any) {
       setStatus({ type: "error", text: `Gagal menghapus: ${String(e?.message || e)}` });
+    } finally {
+      setBusy(false);
+      setTimeout(() => setStatus({ type: "", text: "" }), 2500);
+    }
+  };
+
+  const resetTeacherDeviceBinding = async (nuptkValue: string) => {
+    if (!window.confirm("Reset device binding guru/wali kelas ini? Akun bisa login lagi dari perangkat baru.")) return;
+    setStatus({ type: "", text: "" });
+    setBusy(true);
+    try {
+      const normalizedNuptk = normalize(nuptkValue);
+      const targetTeacher = getOwnedTeacherRow(normalizedNuptk);
+      if (!normalizedNuptk || !targetTeacher) {
+        setStatus({ type: "error", text: "Guru tidak ditemukan pada tenant Anda." });
+        return;
+      }
+
+      await callPersonnelAdminApi("DELETE", {
+        entity: "teacher",
+        action: "reset-device",
+        nuptk: normalizedNuptk,
+        schoolId: normalize(targetTeacher.schoolId || schoolId),
+        schoolName: normalize(targetTeacher.schoolName || schoolName),
+        npsn: normalize(targetTeacher.npsn || npsn),
+      });
+      setStatus({ type: "success", text: "Device binding guru berhasil direset." });
+    } catch (e: any) {
+      setStatus({ type: "error", text: `Gagal reset device binding guru: ${String(e?.message || e)}` });
     } finally {
       setBusy(false);
       setTimeout(() => setStatus({ type: "", text: "" }), 2500);
@@ -3967,6 +3999,16 @@ function MasterStudentsContent() {
                           </td>
                           <td className="px-4 py-3 text-right">
                             <div className="inline-flex items-center gap-3">
+                              <button
+                                type="button"
+                                disabled={busy || !r.deviceId}
+                                onClick={() => resetTeacherDeviceBinding(r.nuptk)}
+                                className={`disabled:opacity-50 ${r.deviceId ? "text-amber-300 hover:text-amber-200" : "text-slate-500"}`}
+                                aria-label="Reset Device Binding"
+                                title={r.deviceId ? "Reset Device Binding" : "Belum ada device binding"}
+                              >
+                                <Smartphone className="h-5 w-5" />
+                              </button>
                               <button
                                 type="button"
                                 disabled={busy}
