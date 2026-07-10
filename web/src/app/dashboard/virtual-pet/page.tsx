@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useEffect, useMemo } from 'react';
+import { limitToLast, onValue, orderByChild, query, ref } from 'firebase/database';
 import { usePetStore, type PetData } from '@/store/usePetStore';
 import { useStudentStore } from '@/store/useStudentStore';
 import { useClassStore } from '@/store/useClassStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useTeacherStore } from '@/store/useTeacherStore';
+import { edulockDb } from '@/lib/edulockFirebase';
 import { 
   Search, 
   ArrowLeft,
@@ -22,7 +24,8 @@ import {
   RotateCcw,
   Users,
   School,
-  User
+  User,
+  History
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { Student } from '@/types/student';
@@ -34,11 +37,29 @@ type PetRiskAnalysis = {
   isSad: boolean;
   isStarving: boolean;
   isLowStatus: boolean;
+  isReviveGraceActive: boolean;
   problems: string[];
 };
 
+type ReviveHistoryItem = {
+  id: string;
+  at: number;
+  schoolId: string;
+  petId: string;
+  actorEmail: string;
+  actorRole: string;
+  health: number | null;
+  happiness: number | null;
+  energy: number | null;
+  hunger: number | null;
+};
+
 function normalizeIdentity(value: unknown) {
-  return String(value || '').trim();
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizeSchoolScope(value: unknown) {
+  return String(value || '').trim().toLowerCase();
 }
 
 function getStudentIdentityCandidates(student?: Partial<Student> | null) {
@@ -47,6 +68,7 @@ function getStudentIdentityCandidates(student?: Partial<Student> | null) {
   return [
     normalizeIdentity(student.id),
     normalizeIdentity(student.nisn),
+    normalizeIdentity(student.username),
   ].filter((value, index, array) => value && array.indexOf(value) === index);
 }
 
@@ -55,9 +77,15 @@ function analyzePetRisk(pet: PetData): PetRiskAnalysis {
   const happiness = Number(pet.stats.happiness || 0);
   const energy = Number(pet.stats.energy || 0);
   const hunger = Number(pet.stats.hunger || 0);
-  const avgStatus = (health + happiness + energy + Math.max(0, 100 - hunger)) / 4;
+  const manualReviveUntil = Number(pet.manualReviveUntil || 0) || 0;
+  const isReviveGraceActive = manualReviveUntil > Date.now();
+  const fullness = Math.max(0, 100 - hunger);
+  const lowestVital = Math.min(health, happiness, energy, fullness);
+  const avgStatus = (health + happiness + energy + fullness) / 4;
 
-  const isDead = pet.status === 'DEAD' || health <= 0 || avgStatus < 20;
+  // Samakan definisi "mati" dengan APK siswa:
+  // DEAD jika status memang DEAD atau ada vital terendah yang jatuh ke 0.
+  const isDead = !isReviveGraceActive && (pet.status === 'DEAD' || health <= 0 || lowestVital <= 0);
   const isSick = pet.status === 'SICK' || health < 30 || happiness < 30;
   const isSad = pet.status === 'SAD' || happiness < 50;
   const isStarving = hunger > 70;
@@ -67,6 +95,7 @@ function analyzePetRisk(pet: PetData): PetRiskAnalysis {
   if (isDead) {
     problems.push('Mati / DEAD');
   } else {
+    if (isReviveGraceActive) problems.push('Dalam masa grace revive');
     if (health < 30) problems.push(`Kesehatan kritis (${health}%)`);
     if (happiness < 30) problems.push(`Kebahagiaan kritis (${happiness}%)`);
     else if (isSad) problems.push(`Kebahagiaan rendah (${happiness}%)`);
@@ -81,7 +110,47 @@ function analyzePetRisk(pet: PetData): PetRiskAnalysis {
     isSad,
     isStarving,
     isLowStatus,
+    isReviveGraceActive,
     problems,
+  };
+}
+
+function derivePetCondition(pet: PetData, risk: PetRiskAnalysis) {
+  const health = Number(pet.stats.health || 0);
+  const happiness = Number(pet.stats.happiness || 0);
+  const energy = Number(pet.stats.energy || 0);
+  const hunger = Number(pet.stats.hunger || 0);
+  const fullness = Math.max(0, 100 - hunger);
+  const lowestVital = Math.min(health, happiness, energy, fullness);
+
+  if (risk.isDead) {
+    return {
+      label: "Mati",
+      className: "bg-black text-white",
+      sublabel: risk.isReviveGraceActive ? "Grace aktif" : "",
+    };
+  }
+
+  if (lowestVital <= 10 || risk.avgStatus < 25) {
+    return {
+      label: "Sekarat",
+      className: "bg-red-600 text-white",
+      sublabel: risk.isReviveGraceActive ? "Grace aktif" : "",
+    };
+  }
+
+  if (risk.isSick || risk.isSad || risk.isStarving || risk.isLowStatus || lowestVital <= 30) {
+    return {
+      label: "Sakit",
+      className: "bg-orange-500 text-white",
+      sublabel: risk.isReviveGraceActive ? "Grace aktif" : "",
+    };
+  }
+
+  return {
+    label: "Sehat",
+    className: "bg-green-600 text-white",
+    sublabel: risk.isReviveGraceActive ? "Grace aktif" : "",
   };
 }
 
@@ -95,6 +164,7 @@ export default function VirtualPetPage() {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'summary' | 'leaderboard' | 'risk' | 'stats' | 'rewards'>('risk');
+  const [reviveHistory, setReviveHistory] = useState<ReviveHistoryItem[]>([]);
 
   const studentByIdentity = useMemo(() => {
     const lookup = new Map<string, Student>();
@@ -119,8 +189,22 @@ export default function VirtualPetPage() {
   }, [students]);
 
   const scopedPets = useMemo(() => {
-    return pets.filter((pet) => studentIdentitySet.has(normalizeIdentity(pet.studentId)));
-  }, [pets, studentIdentitySet]);
+    const scopedSchoolId = normalizeSchoolScope(user?.schoolId);
+    const isSuperAdmin = user?.role === 'super_admin';
+
+    return pets.filter((pet) => {
+      const normalizedStudentId = normalizeIdentity(pet.studentId);
+      const matchedStudent = studentByIdentity.get(normalizedStudentId);
+      const petSchoolId = normalizeSchoolScope(pet.schoolId);
+      const studentSchoolId = normalizeSchoolScope(matchedStudent?.schoolId);
+
+      if (isSuperAdmin) return true;
+      if (studentIdentitySet.has(normalizedStudentId)) return true;
+      if (!scopedSchoolId) return true;
+
+      return petSchoolId === scopedSchoolId || studentSchoolId === scopedSchoolId;
+    });
+  }, [pets, studentByIdentity, studentIdentitySet, user?.role, user?.schoolId]);
 
   // Sync data
   useEffect(() => {
@@ -133,6 +217,50 @@ export default function VirtualPetPage() {
       unsubTeachers();
     };
   }, [initPetSync, subscribeToTeachers, syncStudents, user?.schoolId]);
+
+  useEffect(() => {
+    if (!user || (user.role !== "admin" && user.role !== "super_admin")) {
+      setReviveHistory([]);
+      return;
+    }
+
+    const scopedSchoolId = String(user.schoolId || "").trim().toLowerCase();
+    const qRef = query(ref(edulockDb, "platform_events"), orderByChild("at"), limitToLast(150));
+    const unsub = onValue(qRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data || typeof data !== "object") {
+        setReviveHistory([]);
+        return;
+      }
+
+      const rows = Object.values<any>(data)
+        .map((item) => {
+          const metadata = item?.metadata && typeof item.metadata === "object" ? item.metadata : {};
+          return {
+            id: String(item?.id || ""),
+            at: Number(item?.at || 0) || 0,
+            schoolId: String(item?.schoolId || "").trim().toLowerCase(),
+            petId: String(item?.targetId || "").trim(),
+            actorEmail: String(item?.actorEmail || "").trim().toLowerCase(),
+            actorRole: String(item?.actorRole || "").trim(),
+            health: metadata?.health !== undefined ? Number(metadata.health) : null,
+            happiness: metadata?.happiness !== undefined ? Number(metadata.happiness) : null,
+            energy: metadata?.energy !== undefined ? Number(metadata.energy) : null,
+            hunger: metadata?.hunger !== undefined ? Number(metadata.hunger) : null,
+            type: String(item?.type || "").trim(),
+          };
+        })
+        .filter((item) => item.type === "VIRTUAL_PET_REVIVE")
+        .filter((item) => !scopedSchoolId || item.schoolId === scopedSchoolId)
+        .sort((a, b) => b.at - a.at)
+        .slice(0, 12)
+        .map(({ type, ...rest }) => rest);
+
+      setReviveHistory(rows);
+    });
+
+    return () => unsub();
+  }, [user]);
 
   // ADMIN VIEW
   if (user?.role === "admin" || user?.role === "super_admin") {
@@ -157,7 +285,7 @@ export default function VirtualPetPage() {
     const [selectedClassReward, setSelectedClassReward] = useState('');
     const [selectedStudentId, setSelectedStudentId] = useState('');
     const [studentSearchTerm, setStudentSearchTerm] = useState('');
-    const [rewardType, setRewardType] = useState<'coins' | 'exp' | 'health' | 'happiness' | 'energy' | 'intelligence' | 'social' | 'hunger'>('coins');
+    const [rewardType, setRewardType] = useState<'coins' | 'exp' | 'intelligence' | 'social'>('coins');
     const [rewardAmount, setRewardAmount] = useState(10);
     const [isSubmittingReward, setIsSubmittingReward] = useState(false);
 
@@ -266,7 +394,7 @@ export default function VirtualPetPage() {
 
             return {
                 ...p,
-                studentName: student?.name || 'Unknown Student',
+                studentName: student?.name || p.studentName || p.petName || 'Unknown Student',
                 studentClass: student?.class || '-',
                 risk,
             };
@@ -279,6 +407,19 @@ export default function VirtualPetPage() {
             p.petName.toLowerCase().includes(searchTerm.toLowerCase())
         );
     }, [scopedPets, searchTerm, studentByIdentity]);
+
+    const reviveHistoryRows = useMemo(() => {
+        return reviveHistory.map((item) => {
+            const pet = scopedPets.find((entry) => entry.id === item.petId);
+            const student = pet ? studentByIdentity.get(normalizeIdentity(pet.studentId)) : undefined;
+            return {
+                ...item,
+                studentName: student?.name || pet?.petName || 'Siswa tidak ditemukan',
+                studentClass: student?.class || '-',
+                petName: pet?.petName || 'Buddy',
+            };
+        });
+    }, [reviveHistory, scopedPets, studentByIdentity]);
 
     return (
         <div className="min-h-screen bg-slate-900/30 p-6 space-y-6">
@@ -379,6 +520,7 @@ export default function VirtualPetPage() {
                                             <th className="px-4 py-3 text-left text-xs font-bold text-red-600 uppercase tracking-wider">Pet</th>
                                             <th className="px-4 py-3 text-left text-xs font-bold text-red-600 uppercase tracking-wider">Masalah</th>
                                             <th className="px-4 py-3 text-left text-xs font-bold text-red-600 uppercase tracking-wider">Status Detail</th>
+                                            <th className="px-4 py-3 text-left text-xs font-bold text-red-600 uppercase tracking-wider">Keterangan</th>
                                             <th className="px-4 py-3 text-left text-xs font-bold text-red-600 uppercase tracking-wider">Aksi</th>
                                         </tr>
                                     </thead>
@@ -448,6 +590,23 @@ export default function VirtualPetPage() {
                                                     </div>
                                                 </div>
                                             </td>
+                                            <td className="px-4 py-4 align-middle">
+                                                {(() => {
+                                                    const condition = derivePetCondition(pet, pet.risk);
+                                                    return (
+                                                        <div className="space-y-1">
+                                                            <div className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${condition.className}`}>
+                                                                {condition.label}
+                                                            </div>
+                                                            {condition.sublabel ? (
+                                                                <div className="text-[11px] font-semibold text-slate-400">
+                                                                    {condition.sublabel}
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </td>
                                             <td className="px-4 py-4 whitespace-nowrap text-sm text-slate-400">
                                         {pet.risk.isDead ? (
                                             <button
@@ -481,7 +640,7 @@ export default function VirtualPetPage() {
                                             ))
                                         ) : (
                                             <tr>
-                                                <td colSpan={5} className="px-4 py-8 text-center text-slate-400 font-medium text-sm">
+                                                <td colSpan={6} className="px-4 py-8 text-center text-slate-400 font-medium text-sm">
                                                     Tidak ada pet yang memerlukan perhatian khusus saat ini.
                                                 </td>
                                             </tr>
@@ -550,6 +709,72 @@ export default function VirtualPetPage() {
                                         ))}
                                     </div>
                                 </div>
+                            </div>
+
+                            <div className="bg-slate-900/30 rounded-xl p-6 border border-slate-700">
+                                <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+                                    <div>
+                                        <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                                            <History className="w-5 h-5 text-red-500" />
+                                            Riwayat Revive Pet
+                                        </h3>
+                                        <p className="text-xs font-semibold text-slate-400 mt-1">
+                                            Menampilkan revive terbaru yang dilakukan admin untuk sekolah ini.
+                                        </p>
+                                    </div>
+                                    <div className="text-xs font-bold text-slate-400">
+                                        {reviveHistoryRows.length} data terbaru
+                                    </div>
+                                </div>
+
+                                {reviveHistoryRows.length > 0 ? (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full">
+                                            <thead className="bg-slate-900/40 border-y border-slate-700">
+                                                <tr>
+                                                    <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Waktu</th>
+                                                    <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Siswa</th>
+                                                    <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Pet</th>
+                                                    <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Admin</th>
+                                                    <th className="px-4 py-3 text-left text-xs font-bold text-slate-400 uppercase tracking-wider">Reset Stat</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-800">
+                                                {reviveHistoryRows.map((item) => (
+                                                    <tr key={item.id} className="hover:bg-slate-900/30 transition-colors">
+                                                        <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-slate-300">
+                                                            {item.at ? new Date(item.at).toLocaleString('id-ID') : '-'}
+                                                        </td>
+                                                        <td className="px-4 py-4 whitespace-nowrap">
+                                                            <div className="font-bold text-slate-100">{item.studentName}</div>
+                                                            <div className="text-xs font-semibold text-slate-400">{item.studentClass}</div>
+                                                        </td>
+                                                        <td className="px-4 py-4 whitespace-nowrap">
+                                                            <div className="font-bold text-slate-100 uppercase">{item.petName}</div>
+                                                            <div className="text-xs font-semibold text-slate-400">{item.petId}</div>
+                                                        </td>
+                                                        <td className="px-4 py-4 whitespace-nowrap">
+                                                            <div className="font-medium text-slate-300">{item.actorEmail || '-'}</div>
+                                                            <div className="text-xs font-semibold text-slate-400">{item.actorRole || '-'}</div>
+                                                        </td>
+                                                        <td className="px-4 py-4">
+                                                            <div className="inline-flex flex-wrap gap-2 text-xs font-bold">
+                                                                <span className="rounded-full bg-red-500/15 px-2 py-1 text-red-300">H {item.health ?? '-'}</span>
+                                                                <span className="rounded-full bg-pink-500/15 px-2 py-1 text-pink-300">Happy {item.happiness ?? '-'}</span>
+                                                                <span className="rounded-full bg-yellow-500/15 px-2 py-1 text-yellow-300">Energy {item.energy ?? '-'}</span>
+                                                                <span className="rounded-full bg-orange-500/15 px-2 py-1 text-orange-300">Hunger {item.hunger ?? '-'}</span>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                ) : (
+                                    <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/20 px-4 py-8 text-center text-sm font-medium text-slate-400">
+                                        Belum ada riwayat revive pet untuk sekolah ini.
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -761,15 +986,9 @@ export default function VirtualPetPage() {
                                                 <option value="coins">Coins (Mata Uang)</option>
                                                 <option value="exp">XP (Experience Points)</option>
                                             </optgroup>
-                                            <optgroup label="Stats" className="font-bold text-slate-100">
-                                                <option value="health">Kesehatan (+Health)</option>
-                                                <option value="happiness">Kebahagiaan (+Happiness)</option>
-                                                <option value="energy">Energi (+Energy)</option>
+                                            <optgroup label="Non-Core Stats" className="font-bold text-slate-100">
                                                 <option value="intelligence">Kecerdasan (+Intelligence)</option>
                                                 <option value="social">Sosial (+Social)</option>
-                                            </optgroup>
-                                            <optgroup label="Emergency" className="font-bold text-red-600">
-                                                <option value="hunger">Makan (Kurangi Lapar)</option>
                                             </optgroup>
                                         </select>
                                     </div>
@@ -786,9 +1005,9 @@ export default function VirtualPetPage() {
                                     </div>
                                 </div>
                                 <p className="text-sm font-medium text-slate-300">
-                                    {rewardType === 'coins' || rewardType === 'exp' ? 'Masukkan jumlah koin/XP.' : 
-                                     rewardType === 'hunger' ? 'Jumlah makanan (mengurangi rasa lapar).' :
-                                     'Maksimal 100 poin (menambah status).'}
+                                    {rewardType === 'coins' || rewardType === 'exp'
+                                      ? 'Masukkan jumlah koin/XP.'
+                                      : 'Reward manual hanya berlaku untuk stat non-inti seperti kecerdasan dan sosial.'}
                                 </p>
                             </div>
 

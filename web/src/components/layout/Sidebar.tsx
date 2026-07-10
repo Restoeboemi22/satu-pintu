@@ -9,7 +9,8 @@ import { useEffect, useMemo } from "react";
 import {
   LayoutDashboard, Users, UserCheck,
   BookOpen, Award, Settings, Bell, AlertTriangle,
-  Clock, ChevronRight, ChevronDown, School, Database, Lock, Activity, FileText, BarChart3
+  Clock, ChevronRight, ChevronDown, School, Database, Lock, Activity, FileText, BarChart3,
+  Command, LifeBuoy, MapPinned, Network, Shield, ShieldCheck, Workflow
 } from "lucide-react";
 
 interface SidebarProps {
@@ -37,11 +38,12 @@ const Sidebar = ({ className = "", onClose }: SidebarProps) => {
   const isAdminLenteraWorkspaceRoute = user?.role === "admin" && isLenteraModuleRoute;
   const isServiceStatusRoute = user?.role === "super_admin" && Boolean(pathname?.startsWith("/dashboard/super/service-status"));
   const isGasBrandRoute = isGasModuleRoute && !isServiceStatusRoute;
+  const isEduLockBrandRoute = isEduLockModuleRoute;
   const isLenteraBrandRoute = isAdminLenteraWorkspaceRoute;
-  const showDatabaseSection = !isAdminGasWorkspaceRoute && !isAdminEduLockWorkspaceRoute && !isAdminLenteraWorkspaceRoute;
+  const showDatabaseSection = !isEduLockModuleRoute && !isAdminGasWorkspaceRoute && !isAdminEduLockWorkspaceRoute && !isAdminLenteraWorkspaceRoute;
   const showGasSection = !isEduLockModuleRoute && !isAdminLenteraWorkspaceRoute;
   const showEduLockSection = !isGasModuleRoute && !isAdminLenteraWorkspaceRoute;
-  const showLenteraSection = !isAdminGasWorkspaceRoute && !isAdminEduLockWorkspaceRoute;
+  const showLenteraSection = !isEduLockModuleRoute && !isAdminGasWorkspaceRoute && !isAdminEduLockWorkspaceRoute;
   const lenteraTab = String(searchParams.get("tab") || "").trim();
   const lenteraView = String(searchParams.get("view") || "").trim();
   const lenteraTaskViewRaw = String(searchParams.get("taskView") || "").trim();
@@ -113,7 +115,7 @@ const Sidebar = ({ className = "", onClose }: SidebarProps) => {
   return (
     <div className={`flex h-full w-72 flex-col bg-premium text-white print:hidden border-r border-white/10 ${className}`}>
       <div className="border-b border-white/10 px-5 pb-4 pt-5">
-        <div className={`rounded-2xl border border-white/10 bg-white/5 ${isGasBrandRoute ? "p-5" : "p-4"}`}>
+        <div className={`rounded-2xl border border-white/10 bg-white/5 ${isGasBrandRoute || isEduLockBrandRoute ? "p-5" : "p-4"}`}>
           {isGasBrandRoute ? (
             <div className="flex flex-col items-center text-center">
               <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-cyan-500/15 shadow-lg shadow-cyan-500/15">
@@ -128,6 +130,24 @@ const Sidebar = ({ className = "", onClose }: SidebarProps) => {
               <div className="mt-3 text-base font-bold leading-tight text-white">Gerbang Aplikasi Sekolah</div>
               <div className="mt-1 text-xs text-slate-400">
                 {user?.role === "super_admin" ? "Super Admin" : "Admin Sekolah"}
+              </div>
+            </div>
+          ) : isEduLockBrandRoute ? (
+            <div className="flex flex-col items-center text-center">
+              <Image
+                src="/Logo EduLock.png"
+                alt="EduLock"
+                width={220}
+                height={98}
+                className="h-auto w-full max-w-[200px] object-contain"
+                priority
+              />
+              <div className="mt-3 text-base font-bold leading-tight text-white">EduLock</div>
+              <div className="mt-1 text-xs text-slate-400">
+                {user?.role === "super_admin" ? "Super Admin" : "Admin Sekolah"}
+              </div>
+              <div className="mt-1 text-[11px] uppercase tracking-[0.18em] text-cyan-200/80">
+                Control Panel
               </div>
             </div>
           ) : isLenteraBrandRoute ? (
@@ -398,13 +418,34 @@ const Sidebar = ({ className = "", onClose }: SidebarProps) => {
                 </Link>
                 {user.role === "super_admin" ? (
                   <>
+                    <div className="px-4 py-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">Overview</div>
                     <Link
                       href="/edulock/super?section=dashboard"
                       className={`${linkClassByState(isActiveWithQuery("/edulock/super", "section", "dashboard"), "normal")} ml-4`}
                       onClick={handleLinkClick}
                     >
+                      <LayoutDashboard className="w-4 h-4" />
+                      <span>Dashboard</span>
+                      <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
+                    </Link>
+                    <Link
+                      href="/edulock/super?section=monitoring"
+                      className={`${linkClassByState(isActiveWithQuery("/edulock/super", "section", "monitoring"), "normal")} ml-4`}
+                      onClick={handleLinkClick}
+                    >
                       <Activity className="w-4 h-4" />
-                      <span>Dashboard EduLock</span>
+                      <span>Realtime Monitoring</span>
+                      <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
+                    </Link>
+
+                    <div className="px-4 py-2 pt-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Operasional</div>
+                    <Link
+                      href="/edulock/super?section=tenants"
+                      className={`${linkClassByState(isActiveWithQuery("/edulock/super", "section", "tenants"), "normal")} ml-4`}
+                      onClick={handleLinkClick}
+                    >
+                      <Network className="w-4 h-4" />
+                      <span>Tenant EduLock</span>
                       <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
                     </Link>
                     <Link
@@ -412,17 +453,84 @@ const Sidebar = ({ className = "", onClose }: SidebarProps) => {
                       className={`${linkClassByState(isActiveWithQuery("/edulock/super", "section", "admins"), "normal")} ml-4`}
                       onClick={handleLinkClick}
                     >
-                      <UserCheck className="w-4 h-4" />
+                      <Users className="w-4 h-4" />
                       <span>Admin Sekolah</span>
                       <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
                     </Link>
                     <Link
-                      href="/edulock/super?section=tenants"
-                      className={`${linkClassByState(isActiveWithQuery("/edulock/super", "section", "tenants"), "normal")} ml-4`}
+                      href="/edulock/super?section=command_center"
+                      className={`${linkClassByState(isActiveWithQuery("/edulock/super", "section", "command_center"), "normal")} ml-4`}
                       onClick={handleLinkClick}
                     >
-                      <School className="w-4 h-4" />
-                      <span>Tenant EduLock</span>
+                      <Command className="w-4 h-4" />
+                      <span>Command Center / Uninstall</span>
+                      <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
+                    </Link>
+
+                    <div className="px-4 py-2 pt-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Keamanan</div>
+                    <Link
+                      href="/edulock/super?section=policy_center"
+                      className={`${linkClassByState(isActiveWithQuery("/edulock/super", "section", "policy_center"), "normal")} ml-4`}
+                      onClick={handleLinkClick}
+                    >
+                      <Shield className="w-4 h-4" />
+                      <span>Policy Center</span>
+                      <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
+                    </Link>
+                    <Link
+                      href="/edulock/super?section=zone_templates"
+                      className={`${linkClassByState(isActiveWithQuery("/edulock/super", "section", "zone_templates"), "normal")} ml-4`}
+                      onClick={handleLinkClick}
+                    >
+                      <MapPinned className="w-4 h-4" />
+                      <span>Zone Templates</span>
+                      <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
+                    </Link>
+                    <Link
+                      href="/edulock/super?section=device_fleet"
+                      className={`${linkClassByState(isActiveWithQuery("/edulock/super", "section", "device_fleet"), "normal")} ml-4`}
+                      onClick={handleLinkClick}
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>Device Fleet</span>
+                      <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
+                    </Link>
+                    <Link
+                      href="/edulock/super?section=izin_exception"
+                      className={`${linkClassByState(isActiveWithQuery("/edulock/super", "section", "izin_exception"), "normal")} ml-4`}
+                      onClick={handleLinkClick}
+                    >
+                      <Lock className="w-4 h-4" />
+                      <span>Izin / Exception</span>
+                      <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
+                    </Link>
+                    <Link
+                      href="/edulock/super?section=audit"
+                      className={`${linkClassByState(isActiveWithQuery("/edulock/super", "section", "audit"), "normal")} ml-4`}
+                      onClick={handleLinkClick}
+                    >
+                      <Workflow className="w-4 h-4" />
+                      <span>Audit</span>
+                      <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
+                    </Link>
+
+                    <div className="px-4 py-2 pt-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Konfigurasi</div>
+                    <Link
+                      href="/edulock/super?section=integrations"
+                      className={`${linkClassByState(isActiveWithQuery("/edulock/super", "section", "integrations"), "normal")} ml-4`}
+                      onClick={handleLinkClick}
+                    >
+                      <Network className="w-4 h-4" />
+                      <span>Integrations</span>
+                      <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
+                    </Link>
+                    <Link
+                      href="/edulock/super?section=support"
+                      className={`${linkClassByState(isActiveWithQuery("/edulock/super", "section", "support"), "normal")} ml-4`}
+                      onClick={handleLinkClick}
+                    >
+                      <LifeBuoy className="w-4 h-4" />
+                      <span>Support</span>
                       <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
                     </Link>
                     <Link
@@ -431,7 +539,7 @@ const Sidebar = ({ className = "", onClose }: SidebarProps) => {
                       onClick={handleLinkClick}
                     >
                       <Settings className="w-4 h-4" />
-                      <span>Settings EduLock</span>
+                      <span>Settings</span>
                       <ChevronRight className="w-4 h-4 ml-auto opacity-50" />
                     </Link>
                   </>

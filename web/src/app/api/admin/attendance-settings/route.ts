@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGasAdminDb } from "@/lib/server/firebaseAdmin";
+import { getEduLockAdminDb, getGasAdminDb } from "@/lib/server/firebaseAdmin";
 import { enforceAdminCapability } from "@/lib/server/adminPolicy";
 import { writeEduLockAuditEvent } from "@/lib/server/edulockAudit";
 
@@ -74,6 +74,27 @@ function sanitizeSchedules(schedules: DailySchedulePayload[] | undefined) {
   });
 }
 
+function mapAttendanceDayIdToEduLockKey(dayId: number) {
+  switch (dayId) {
+    case 0:
+      return "sun";
+    case 1:
+      return "mon";
+    case 2:
+      return "tue";
+    case 3:
+      return "wed";
+    case 4:
+      return "thu";
+    case 5:
+      return "fri";
+    case 6:
+      return "sat";
+    default:
+      throw new Error("dayId jadwal tidak valid.");
+  }
+}
+
 function sanitizeLocation(location?: SchoolLocationPayload) {
   const latitude = Number(location?.latitude);
   const longitude = Number(location?.longitude);
@@ -103,6 +124,17 @@ async function saveAttendanceSchedules(payload: AttendanceSettingsPayload, autho
   });
 
   await getGasAdminDb().ref().update(updates);
+
+  const eduLockWeekdays: Record<string, { enabled: boolean; start: string; end: string }> = {};
+  schedules.forEach((schedule) => {
+    eduLockWeekdays[mapAttendanceDayIdToEduLockKey(schedule.dayId)] = {
+      enabled: schedule.isEnabled !== false,
+      start: schedule.entryTime,
+      end: schedule.exitTime,
+    };
+  });
+  await getEduLockAdminDb().ref(`schools/${schoolId}/schedule/weekdays`).set(eduLockWeekdays);
+
   await writeEduLockAuditEvent(profile, {
     type: "ATTENDANCE_SCHEDULE_SAVE",
     message: `Jadwal presensi sekolah ${schoolId} diperbarui.`,
@@ -146,6 +178,13 @@ async function saveSchoolLocation(payload: AttendanceSettingsPayload, authorizat
   const location = sanitizeLocation(payload.location);
 
   await getGasAdminDb().ref(`school_settings/${schoolId}/attendance/school_location`).update(location);
+  await getEduLockAdminDb().ref(`schools/${schoolId}/config`).update({
+    latitude: location.latitude,
+    longitude: location.longitude,
+    radius: location.radius,
+    updatedAt: Date.now(),
+    locationSource: "gas_attendance_school_location",
+  });
   await writeEduLockAuditEvent(profile, {
     type: "ATTENDANCE_LOCATION_SAVE",
     message: `Lokasi sekolah untuk presensi diperbarui.`,
@@ -183,6 +222,11 @@ async function addHoliday(payload: AttendanceSettingsPayload, authorizationHeade
 
   const holidayRef = getGasAdminDb().ref(`school_settings/${schoolId}/attendance/holidays`).push();
   await holidayRef.set({ date, description });
+  await getEduLockAdminDb().ref(`schools/${schoolId}/holidays/${date}`).set({
+    date,
+    note: description,
+    createdAt: Date.now(),
+  });
   await writeEduLockAuditEvent(profile, {
     type: "ATTENDANCE_HOLIDAY_ADD",
     message: `Hari libur ${date} ditambahkan.`,
@@ -204,7 +248,14 @@ async function removeHoliday(payload: AttendanceSettingsPayload, authorizationHe
     throw new Error("ID hari libur tidak valid.");
   }
 
+  const holidaySnapshot = await getGasAdminDb().ref(`school_settings/${schoolId}/attendance/holidays/${holidayId}`).get();
+  const holiday = holidaySnapshot.exists() ? holidaySnapshot.val() || {} : {};
+  const holidayDate = normalizeText(holiday?.date);
+
   await getGasAdminDb().ref(`school_settings/${schoolId}/attendance/holidays/${holidayId}`).remove();
+  if (holidayDate) {
+    await getEduLockAdminDb().ref(`schools/${schoolId}/holidays/${holidayDate}`).remove();
+  }
   await writeEduLockAuditEvent(profile, {
     type: "ATTENDANCE_HOLIDAY_REMOVE",
     message: `Hari libur ${holidayId} dihapus.`,

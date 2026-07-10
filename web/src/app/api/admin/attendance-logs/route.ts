@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getGasAdminDb } from "@/lib/server/firebaseAdmin";
+import { getEduLockAdminDb } from "@/lib/server/firebaseAdmin";
 import { enforceAdminCapability } from "@/lib/server/adminPolicy";
 import { writeEduLockAuditEvent } from "@/lib/server/edulockAudit";
 
@@ -27,6 +28,42 @@ function normalizeSchoolId(value: unknown): string {
   return normalizeText(value).toLowerCase();
 }
 
+function formatDateKeyWib(dateMs: number) {
+  const wibShiftMs = 7 * 60 * 60 * 1000;
+  const d = new Date(dateMs + wibShiftMs);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+async function mirrorAttendanceToEduLock(params: {
+  nisnKey: string;
+  schoolId: string;
+  dateMs: number;
+  status: "PRESENT" | "ABSENT" | "LATE" | "SICK" | "PERMIT";
+  studentName?: string;
+}) {
+  const nisnKey = normalizeText(params.nisnKey);
+  if (!nisnKey) return;
+
+  const dateMs = Number(params.dateMs);
+  if (!Number.isFinite(dateMs)) return;
+
+  const dateKey = formatDateKeyWib(dateMs);
+  const now = Date.now();
+
+  await getEduLockAdminDb()
+    .ref(`students/${nisnKey}/daily_attendance/${dateKey}`)
+    .set({
+      status: params.status,
+      schoolId: normalizeSchoolId(params.schoolId),
+      date: dateMs,
+      studentName: normalizeText(params.studentName),
+      updatedAt: now,
+    });
+}
+
 async function getStudentMeta(studentId: string) {
   const snapshot = await getGasAdminDb().ref(`master_students/${studentId}`).get();
   if (!snapshot.exists()) {
@@ -38,6 +75,7 @@ async function getStudentMeta(studentId: string) {
     schoolId: normalizeSchoolId(value.schoolId),
     schoolName: normalizeText(value.schoolName),
     name: normalizeText(value.name),
+    nisnKey: normalizeText(value.nisn || studentId),
   };
 }
 
@@ -86,6 +124,17 @@ async function upsertManualLog(payload: AttendanceLogPayload, authorizationHeade
     createdAt: Number(existing.createdAt || now),
     updatedAt: now,
   });
+
+  try {
+    await mirrorAttendanceToEduLock({
+      nisnKey: studentMeta.nisnKey || studentId,
+      schoolId: context.schoolId,
+      dateMs: date,
+      status,
+      studentName: studentName || studentMeta.name,
+    });
+  } catch (_: any) {
+  }
 
   await writeEduLockAuditEvent(context.profile, {
     type: existingSnap.exists() ? "ATTENDANCE_LOG_UPDATE" : "ATTENDANCE_LOG_CREATE",

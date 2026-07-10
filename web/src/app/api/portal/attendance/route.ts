@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getGasAdminDb } from "@/lib/server/firebaseAdmin";
+import { getEduLockAdminDb } from "@/lib/server/firebaseAdmin";
 import { requirePortalSession } from "@/lib/server/portalSession";
 
 type AttendancePayload = {
@@ -23,6 +24,42 @@ function normalizeText(value: unknown) {
 
 function normalizeSchoolId(value: unknown) {
   return normalizeText(value).toLowerCase();
+}
+
+function formatDateKeyWib(dateMs: number) {
+  const wibShiftMs = 7 * 60 * 60 * 1000;
+  const d = new Date(dateMs + wibShiftMs);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+async function mirrorAttendanceToEduLock(params: {
+  nisnKey: string;
+  schoolId: string;
+  dateMs: number;
+  status: "PRESENT" | "ABSENT" | "LATE" | "SICK" | "PERMIT";
+  studentName?: string;
+}) {
+  const nisnKey = normalizeText(params.nisnKey);
+  if (!nisnKey) return;
+
+  const dateMs = Number(params.dateMs);
+  if (!Number.isFinite(dateMs)) return;
+
+  const dateKey = formatDateKeyWib(dateMs);
+  const now = Date.now();
+
+  await getEduLockAdminDb()
+    .ref(`students/${nisnKey}/daily_attendance/${dateKey}`)
+    .set({
+      status: params.status,
+      schoolId: normalizeSchoolId(params.schoolId),
+      date: dateMs,
+      studentName: normalizeText(params.studentName),
+      updatedAt: now,
+    });
 }
 
 async function getTeacherContext(teacherId: string, schoolId: string) {
@@ -56,6 +93,7 @@ async function getStudentContext(studentId: string, schoolId: string) {
   return {
     name: normalizeText(student.name),
     className: normalizeText(student.class),
+    nisnKey: normalizeText(student.nisn || studentId),
   };
 }
 
@@ -102,6 +140,17 @@ async function upsertManualLog(payload: AttendancePayload) {
     createdAt: Number(existing.createdAt || now),
     updatedAt: now,
   });
+
+  try {
+    await mirrorAttendanceToEduLock({
+      nisnKey: student.nisnKey || studentId,
+      schoolId,
+      dateMs: date,
+      status,
+      studentName: student.name,
+    });
+  } catch (_: any) {
+  }
 }
 
 export async function POST(request: NextRequest) {

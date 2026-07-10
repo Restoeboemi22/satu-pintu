@@ -14,23 +14,27 @@ export async function callAdminApi<T = any>(
   payload?: Record<string, unknown>
 ): Promise<T> {
   const currentUser = edulockAuth.currentUser;
-  if (!currentUser) {
-    throw new Error("Sesi EduLock admin tidak aktif. Silakan login ulang.");
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (currentUser) {
+    const idToken = await currentUser.getIdToken();
+    headers.Authorization = `Bearer ${idToken}`;
   }
 
-  const idToken = await currentUser.getIdToken();
   const response = await fetch(path, {
     method,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${idToken}`,
-    },
+    headers,
     body: payload ? JSON.stringify(payload) : undefined,
   });
 
   const result = await response.json().catch(() => ({}));
   if (!response.ok || result?.success === false) {
-    throw new Error(String(result?.message || "Permintaan admin gagal diproses."));
+    const fallbackMessage = currentUser
+      ? "Permintaan admin gagal diproses."
+      : "Sesi admin dashboard tidak valid. Silakan login ulang dari halaman admin.";
+    throw new Error(String(result?.message || fallbackMessage));
   }
 
   return result as T;

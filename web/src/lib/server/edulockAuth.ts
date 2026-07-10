@@ -1,5 +1,6 @@
 import { FIREBASE_BOUNDARY } from "@/lib/firebaseProjectBoundary";
 import { getEduLockAdminDb } from "@/lib/server/firebaseAdmin";
+import { getPortalSessionFromRequest } from "@/lib/server/portalSession";
 
 type IdentityToolkitLookupResponse = {
   users?: Array<{
@@ -59,6 +60,26 @@ async function lookupUserByIdToken(idToken: string) {
 export async function requireEduLockAdminProfile(authorizationHeader?: string | null): Promise<ServerEduLockProfile> {
   const token = String(authorizationHeader || "").replace(/^Bearer\s+/i, "").trim();
   if (!token) {
+    const portalSession = getPortalSessionFromRequest();
+    const portalUser = portalSession?.user;
+    if (portalUser && (portalUser.role === "admin" || portalUser.role === "super_admin")) {
+      const profile: ServerEduLockProfile = {
+        uid: normalizeText(portalUser.id),
+        email: normalizeText(portalUser.email).toLowerCase(),
+        role: portalUser.role === "super_admin" ? "super_admin" : "admin",
+        isActive: true,
+        schoolId: normalizeText(portalUser.schoolId),
+        schoolName: normalizeText(portalUser.schoolName),
+        npsn: normalizeText(portalUser.npsn) || undefined,
+      };
+
+      if (profile.role === "admin" && !profile.schoolId) {
+        throw new Error("Akun admin sekolah tidak memiliki schoolId yang valid.");
+      }
+
+      return profile;
+    }
+
     throw new Error("Token otorisasi EduLock wajib dikirim.");
   }
 

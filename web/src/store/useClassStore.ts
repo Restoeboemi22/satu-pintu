@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { onValue, ref, Unsubscribe } from "firebase/database";
 import { database, ensureGasAuth } from "@/lib/firebase";
+import { useAuthStore } from "@/store/useAuthStore";
 
 export interface ClassData {
   id: string;
@@ -175,7 +176,9 @@ export const useClassStore = create<ClassState>()((set, get) => ({
     if (state.unsubscribe) state.unsubscribe();
 
     const rawSchoolId = normalize(schoolId);
-    if (!rawSchoolId) {
+    const authUser = useAuthStore.getState().user;
+    const isSuperAdmin = authUser?.role === "super_admin";
+    if (!rawSchoolId && !isSuperAdmin) {
       set({ classes: [], loading: false, error: null, unsubscribe: null });
       return () => {};
     }
@@ -204,7 +207,9 @@ export const useClassStore = create<ClassState>()((set, get) => ({
       .then(() => {
         if (cancelled) return;
 
-        const classesRef = ref(database, `master_classes/${rawSchoolId}`);
+        const classesRef = rawSchoolId
+          ? ref(database, `master_classes/${rawSchoolId}`)
+          : ref(database, "master_classes");
         const studentsRef = ref(database, "master_students");
 
         unsubClasses = onValue(

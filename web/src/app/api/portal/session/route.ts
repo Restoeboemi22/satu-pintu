@@ -34,6 +34,36 @@ function isAndroidClient(request: NextRequest) {
   return normalizeLower(request.headers.get("x-portal-client")) === "android";
 }
 
+async function getSchoolServiceState(schoolId: string) {
+  const normalizedSchoolId = normalizeLower(schoolId);
+  if (!normalizedSchoolId) {
+    return {
+      schoolActive: true,
+      serviceActive: true,
+    };
+  }
+
+  const snapshot = await getGasAdminDb().ref(`schools/${normalizedSchoolId}`).get();
+  if (!snapshot.exists()) {
+    return {
+      schoolActive: true,
+      serviceActive: true,
+    };
+  }
+
+  return {
+    schoolActive: snapshot.child("isActive").val() !== false,
+    serviceActive: snapshot.child("serviceStatus").child("serviceActive").val() !== false,
+  };
+}
+
+async function ensureSchoolServiceActive(schoolId: string) {
+  const state = await getSchoolServiceState(schoolId);
+  if (!state.schoolActive || !state.serviceActive) {
+    throw new Error("Sekolah Anda dinonaktifkan oleh Super Admin. Silakan hubungi admin pusat.");
+  }
+}
+
 function buildResponseWithSession(user: PortalSessionUser) {
   const sessionUser = buildPortalSessionUser(user);
   const token = createPortalSessionToken(sessionUser);
@@ -71,6 +101,7 @@ async function loginTeacher(payload: PortalSessionPayload) {
   if (status === "inactive" || status === "nonaktif") {
     throw new Error("Akun guru sedang nonaktif.");
   }
+  await ensureSchoolServiceActive(schoolId);
 
   return {
     id: normalizeText(teacher.nuptk || password),
@@ -110,6 +141,7 @@ async function loginStudent(payload: PortalSessionPayload) {
   if (status === "inactive" || status === "nonaktif" || status === "graduated" || status === "transferred") {
     throw new Error("Akun siswa tidak aktif untuk login portal.");
   }
+  await ensureSchoolServiceActive(schoolId);
 
   return {
     id: normalizeText(student.nisn || password),
@@ -126,6 +158,9 @@ async function loginStudent(payload: PortalSessionPayload) {
 
 async function syncAdminSession(request: NextRequest, payload: PortalSessionPayload) {
   const profile = await requireEduLockAdminProfile(request.headers.get("authorization"));
+  if (profile.role === "admin") {
+    await ensureSchoolServiceActive(profile.schoolId);
+  }
   return {
     id: normalizeText(profile.uid),
     name:
@@ -144,6 +179,17 @@ export async function GET() {
     const session = getPortalSessionFromRequest();
     if (!session) {
       return NextResponse.json({ success: false, message: "Sesi Portal tidak aktif." }, { status: 401 });
+    }
+    if (session.user.role !== "super_admin" && normalizeLower(session.user.schoolId)) {
+      const state = await getSchoolServiceState(session.user.schoolId || "");
+      if (!state.schoolActive || !state.serviceActive) {
+        const response = NextResponse.json(
+          { success: false, message: "Sekolah Anda dinonaktifkan oleh Super Admin. Silakan hubungi admin pusat." },
+          { status: 401 }
+        );
+        response.cookies.set(buildClearPortalSessionCookie());
+        return response;
+      }
     }
     return NextResponse.json({ success: true, data: { user: session.user } });
   } catch (error: any) {

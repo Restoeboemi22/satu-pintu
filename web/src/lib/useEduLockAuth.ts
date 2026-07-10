@@ -32,6 +32,16 @@ function toRole(value: unknown): EduLockRole {
   return String(value || "") === "super_admin" ? "super_admin" : "admin";
 }
 
+function readFlexibleBoolean(value: unknown, defaultValue: boolean): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return defaultValue;
+  if (["true", "1", "yes", "on"].includes(raw)) return true;
+  if (["false", "0", "no", "off"].includes(raw)) return false;
+  return defaultValue;
+}
+
 async function loadOrCreateProfile(user: User): Promise<EduLockAdminProfile> {
   const idToken = await user.getIdToken();
   const response = await fetch("/api/admin/edulock/auth", {
@@ -138,6 +148,22 @@ export function useEduLockAuth() {
     });
     return () => unsub();
   }, [user]);
+
+  useEffect(() => {
+    if (!user || !profile || profile.role !== "admin" || !profile.schoolId) return;
+    const schoolRef = ref(edulockDb, `schools/${String(profile.schoolId).trim().toLowerCase()}`);
+    const unsub = onValue(schoolRef, (snapshot) => {
+      if (!snapshot.exists()) return;
+      const data: any = snapshot.val() || {};
+      const schoolActive = readFlexibleBoolean(data?.isActive, true);
+      const serviceActive = readFlexibleBoolean(data?.serviceStatus?.serviceActive, true);
+      if (schoolActive && serviceActive) return;
+      void signOut(edulockAuth).catch(() => {});
+      setProfile(null);
+      setError("Layanan sekolah sedang dinonaktifkan oleh super admin.");
+    });
+    return () => unsub();
+  }, [profile, user]);
 
   const role: EduLockRole | null = useMemo(() => {
     if (!profile) return null;

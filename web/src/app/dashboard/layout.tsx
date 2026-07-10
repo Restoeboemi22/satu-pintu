@@ -41,17 +41,21 @@ export default function DashboardLayout({
 
     const schoolId = String(user?.schoolId || "").trim();
     const role = String(user?.role || "").trim();
-    const shouldSyncSchoolScopedData = role !== "super_admin" && Boolean(schoolId);
+    const isSuperAdmin = role === "super_admin";
+    const hasSchoolScope = Boolean(schoolId);
 
-    if (!shouldSyncSchoolScopedData) {
+    if (hasSchoolScope && !isSuperAdmin) {
+      setSchoolContext(schoolId);
+    } else {
       setSchoolContext("");
-      return;
     }
 
-    setSchoolContext(schoolId);
-    const unsubDiscipline = initDisciplineSync(schoolId);
     const unsubStudents = syncStudents();
-    const unsubClasses = subscribeToClasses(schoolId);
+    const unsubClasses = subscribeToClasses(isSuperAdmin ? "" : schoolId);
+    const unsubDiscipline =
+      !isSuperAdmin && hasSchoolScope
+        ? initDisciplineSync(schoolId)
+        : () => {};
 
     return () => {
       try {

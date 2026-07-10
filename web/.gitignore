@@ -2,8 +2,10 @@
 .env.local
 .env.local.*
 .env.*.local
+.env.vercel.production
 service-account.json
 service-account.local.json
+tsconfig.tsbuildinfo
 
 .vercel
 .vercel-global/

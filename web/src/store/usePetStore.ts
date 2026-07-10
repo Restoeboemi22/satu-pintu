@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { database } from '@/lib/firebase';
-import { equalTo, onValue, orderByChild, query as rtdbQuery, ref, Unsubscribe } from 'firebase/database';
+import { database, ensureGasAuth } from '@/lib/firebase';
+import { onValue, ref, Unsubscribe } from 'firebase/database';
 import { useStudentStore } from './useStudentStore';
 import { callAdminApi } from '@/lib/callAdminApi';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -27,8 +27,12 @@ export interface PetData {
   petName: string;
   type: string;
   status: string;
+  manualReviveUntil?: number;
   stats: PetStats;
   lastSync: number;
+  lastFed?: number;
+  lastPlayed?: number;
+  lastQuestReset?: number;
   achievements: string[];
 }
 
@@ -39,13 +43,53 @@ interface PetStore {
   // Sync function to start listening to Firebase
   initPetSync: (schoolId?: string) => Unsubscribe;
   getPetByStudentId: (studentId: string) => PetData | undefined;
-  giveReward: (petIds: string[], type: 'coins' | 'exp' | 'health' | 'happiness' | 'energy' | 'intelligence' | 'social' | 'hunger', amount: number) => Promise<void>;
+  giveReward: (petIds: string[], type: 'coins' | 'exp' | 'intelligence' | 'social', amount: number) => Promise<void>;
   revivePet: (petId: string) => Promise<void>;
   resetPetLevel: (petId: string) => Promise<void>;
 }
 
 function normalizeSchoolScope(value?: string) {
   return String(value || '').trim().toLowerCase();
+}
+
+function normalizeIdentity(value: unknown) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function rankPetCandidate(pet: PetData) {
+  return Math.max(
+    Number(pet.lastSync || 0),
+    Number(pet.lastQuestReset || 0),
+    Number(pet.lastPlayed || 0),
+    Number(pet.lastFed || 0)
+  );
+}
+
+function isBetterPetCandidate(candidate: PetData, current: PetData) {
+  const candidateScore = rankPetCandidate(candidate);
+  const currentScore = rankPetCandidate(current);
+
+  if (candidateScore !== currentScore) return candidateScore > currentScore;
+  if (candidate.lastSync !== current.lastSync) return candidate.lastSync > current.lastSync;
+  if (candidate.stats.level !== current.stats.level) return candidate.stats.level > current.stats.level;
+  if (candidate.stats.exp !== current.stats.exp) return candidate.stats.exp > current.stats.exp;
+  return candidate.id > current.id;
+}
+
+function selectBestPetsByStudent(pets: PetData[]) {
+  const bestByStudent = new Map<string, PetData>();
+
+  pets.forEach((pet) => {
+    const studentKey = pet.studentId.trim();
+    if (!studentKey) return;
+
+    const current = bestByStudent.get(studentKey);
+    if (!current || isBetterPetCandidate(pet, current)) {
+      bestByStudent.set(studentKey, pet);
+    }
+  });
+
+  return Array.from(bestByStudent.values());
 }
 
 export const usePetStore = create<PetStore>((set, get) => ({
@@ -96,62 +140,101 @@ export const usePetStore = create<PetStore>((set, get) => ({
     const authUser = useAuthStore.getState().user;
     const scopedSchoolId = normalizeSchoolScope(schoolId || authUser?.schoolId);
     const isSuperAdmin = authUser?.role === 'super_admin';
-    if (!isSuperAdmin && !scopedSchoolId) {
-      set({ pets: [], isLoading: false });
-      return () => {};
-    }
+    let cancelled = false;
+    let unsubscribe: Unsubscribe = () => {};
 
-    const petsRef =
-      !isSuperAdmin && scopedSchoolId
-        ? rtdbQuery(ref(database, 'virtual_pets'), orderByChild('schoolId'), equalTo(scopedSchoolId))
-        : ref(database, 'virtual_pets');
-    
-    return onValue(petsRef, (snapshot) => {
-       const data = snapshot.val();
-       if (data) {
-         const students = useStudentStore.getState().students;
-         const parsedPets: PetData[] = [];
-         
-         Object.values(data).forEach((rawPet: any) => {
-            const petSchoolId = normalizeSchoolScope(rawPet?.schoolId);
-            if (!isSuperAdmin && petSchoolId !== scopedSchoolId) {
+    void ensureGasAuth()
+      .then(() => {
+        if (cancelled) return;
+
+        const petsRef = ref(database, 'virtual_pets');
+        unsubscribe = onValue(
+          petsRef,
+          (snapshot) => {
+            const data = snapshot.val();
+            if (!data) {
+              set({ pets: [], isLoading: false });
               return;
             }
-            // Find student to get name
-            const student = students.find(s => s.id.toString() === rawPet.studentId || s.nisn === rawPet.studentId);
-            const studentName = student ? student.name : "Unknown Student";
 
-            parsedPets.push({
-              id: rawPet.id,
-              studentId: rawPet.studentId,
-              schoolId: rawPet.schoolId ? String(rawPet.schoolId) : undefined,
-              studentName: studentName,
-              petName: rawPet.petName || "Buddy",
-              type: rawPet.petType || "CAT",
-              status: rawPet.status || "HAPPY",
-              stats: {
-                level: rawPet.level || 1,
-                exp: rawPet.experiencePoints || 0,
-                maxExp: (rawPet.level || 1) * 100,
-                health: rawPet.health || 100,
-                energy: rawPet.energy || 100,
-                happiness: rawPet.happiness || 100,
-                intelligence: rawPet.intelligence || 0,
-                social: rawPet.social || 0,
-                creativity: 0, // Not tracked in Android yet
-                coins: rawPet.coins || 0,
-                hunger: rawPet.hunger || 0
-              },
-              lastSync: rawPet.updatedAt || Date.now(),
-              achievements: [] // TODO: Sync achievements if needed
+            const students = useStudentStore.getState().students;
+            const studentLookup = new Map(
+              students.flatMap((student) => {
+                const keys = [
+                  normalizeIdentity(student.id),
+                  normalizeIdentity(student.nisn),
+                  normalizeIdentity(student.username),
+                ].filter(Boolean);
+                return keys.map((key) => [key, student] as const);
+              })
+            );
+
+            const parsedPets: PetData[] = [];
+            Object.values(data).forEach((rawPet: any) => {
+              const rawStudentId = String(rawPet?.studentId || '').trim();
+              if (!rawStudentId) return;
+
+              const normalizedStudentId = normalizeIdentity(rawStudentId);
+              const student = studentLookup.get(normalizedStudentId);
+              const petSchoolId = normalizeSchoolScope(rawPet?.schoolId);
+              const studentSchoolId = normalizeSchoolScope(student?.schoolId);
+
+              if (
+                !isSuperAdmin &&
+                scopedSchoolId &&
+                petSchoolId !== scopedSchoolId &&
+                studentSchoolId !== scopedSchoolId
+              ) {
+                return;
+              }
+
+              parsedPets.push({
+                id: String(rawPet.id || ''),
+                studentId: rawStudentId,
+                schoolId: rawPet.schoolId ? String(rawPet.schoolId) : student?.schoolId,
+                studentName: student?.name || String(rawPet.petName || 'Unknown Student'),
+                petName: rawPet.petName || 'Buddy',
+                type: rawPet.petType || 'CAT',
+                status: rawPet.status || 'HAPPY',
+                manualReviveUntil: Number(rawPet.manualReviveUntil || 0) || 0,
+                stats: {
+                  level: rawPet.level || 1,
+                  exp: rawPet.experiencePoints || 0,
+                  maxExp: (rawPet.level || 1) * 100,
+                  health: rawPet.health || 100,
+                  energy: rawPet.energy || 100,
+                  happiness: rawPet.happiness || 100,
+                  intelligence: rawPet.intelligence || 0,
+                  social: rawPet.social || 0,
+                  creativity: 0,
+                  coins: rawPet.coins || 0,
+                  hunger: rawPet.hunger || 0
+                },
+                lastSync: rawPet.updatedAt || Date.now(),
+                lastFed: Number(rawPet.lastFed || 0) || 0,
+                lastPlayed: Number(rawPet.lastPlayed || 0) || 0,
+                lastQuestReset: Number(rawPet.lastQuestReset || 0) || 0,
+                achievements: []
+              });
             });
-         });
-         
-         set({ pets: parsedPets, isLoading: false });
-       } else {
-         set({ pets: [], isLoading: false });
-       }
-    });
+
+            set({ pets: selectBestPetsByStudent(parsedPets), isLoading: false });
+          },
+          (error) => {
+            console.error('Error syncing pets:', error);
+            set({ pets: [], isLoading: false });
+          }
+        );
+      })
+      .catch((error: any) => {
+        console.error('Error starting pet sync:', error);
+        set({ pets: [], isLoading: false });
+      });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   },
 
   getPetByStudentId: (studentId) => {

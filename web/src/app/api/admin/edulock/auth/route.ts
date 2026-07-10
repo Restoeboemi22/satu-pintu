@@ -70,6 +70,7 @@ async function resolveSchoolBindingByEmail(email: string) {
       schoolName: normalizeText(value?.name),
       npsn: normalizeText(value?.npsn),
       isActive: value?.isActive !== false,
+      serviceActive: value?.serviceStatus?.serviceActive !== false,
       adminAccessActive: value?.adminAccessActive !== false,
     };
   }
@@ -89,6 +90,7 @@ async function resolveSchoolBindingByNpsn(npsn: string) {
     schoolName: normalizeText(school?.name),
     npsn: normalizeText(school?.npsn || npsn),
     isActive: school?.isActive !== false,
+    serviceActive: school?.serviceStatus?.serviceActive !== false,
     adminAccessActive: school?.adminAccessActive !== false,
   };
 }
@@ -110,6 +112,7 @@ async function syncProfileFromToken(authorizationHeader?: string | null) {
 
   const identity = await lookupUserByIdToken(token);
   const db = getEduLockAdminDb();
+  const auth = getEduLockAdminAuth();
   const now = Date.now();
   const profileRef = db.ref(`admin_profiles/${identity.uid}`);
   const profileSnap = await profileRef.get();
@@ -141,6 +144,11 @@ async function syncProfileFromToken(authorizationHeader?: string | null) {
       updatedAt: now,
       lastLoginAt: now,
     });
+    await auth.setCustomUserClaims(nextProfile.uid, {
+      role: "super_admin",
+      schoolId: nextProfile.schoolId || undefined,
+      npsn: nextProfile.npsn || undefined,
+    });
     await writeEduLockAuditEvent(nextProfile, {
       type: "edulock.auth.profile_synced",
       message: "Profil super admin EduLock tersinkron setelah login.",
@@ -157,6 +165,9 @@ async function syncProfileFromToken(authorizationHeader?: string | null) {
   }
   if (!binding.isActive) {
     throw new Error("Sekolah nonaktif. Silakan hubungi super admin.");
+  }
+  if (!binding.serviceActive) {
+    throw new Error("Layanan sekolah sedang dinonaktifkan oleh super admin.");
   }
   if (!binding.adminAccessActive || raw?.isActive === false) {
     throw new Error("Akses admin sekolah dinonaktifkan oleh super admin.");
@@ -178,6 +189,11 @@ async function syncProfileFromToken(authorizationHeader?: string | null) {
   };
 
   await profileRef.set(nextProfile);
+  await auth.setCustomUserClaims(nextProfile.uid, {
+    role: "admin",
+    schoolId: nextProfile.schoolId,
+    npsn: nextProfile.npsn || undefined,
+  });
   await writeEduLockAuditEvent(nextProfile, {
     type: "edulock.auth.profile_synced",
     message: `Profil admin sekolah ${nextProfile.schoolId} tersinkron setelah login.`,
@@ -199,6 +215,9 @@ async function bootstrapSchoolAdmin(payload: EduLockAuthPayload) {
   }
   if (!binding.isActive) {
     throw new Error("Sekolah nonaktif. Hubungi super admin.");
+  }
+  if (!binding.serviceActive) {
+    throw new Error("Layanan sekolah sedang dinonaktifkan oleh super admin.");
   }
   if (!binding.adminAccessActive) {
     throw new Error("Akses admin sekolah dinonaktifkan oleh super admin.");
@@ -245,6 +264,11 @@ async function bootstrapSchoolAdmin(payload: EduLockAuthPayload) {
   // belum ada. Reset default untuk akun yang sudah pernah hidup harus lewat
   // route super admin yang terautentikasi.
   if (userAlreadyExists && existingProfileSnap.exists()) {
+    await auth.setCustomUserClaims(userRecord.uid, {
+      role: "admin",
+      schoolId: binding.schoolId,
+      npsn: binding.npsn || undefined,
+    });
     return {
       created: false,
       defaultReady: false,
@@ -275,6 +299,11 @@ async function bootstrapSchoolAdmin(payload: EduLockAuthPayload) {
     createdAt: typeof existingProfile?.createdAt === "number" ? existingProfile.createdAt : now,
     updatedAt: now,
     lastLoginAt: typeof existingProfile?.lastLoginAt === "number" ? existingProfile.lastLoginAt : null,
+  });
+  await auth.setCustomUserClaims(userRecord.uid, {
+    role: "admin",
+    schoolId: binding.schoolId,
+    npsn: binding.npsn || undefined,
   });
   await db.ref(`schools/${binding.schoolId}`).update({ updatedAt: now });
   await writeEduLockAuditEvent({ uid: "system", email: "system@edulock", role: "system" }, {

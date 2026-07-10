@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEduLockAdminAuth, getEduLockAdminDb } from "@/lib/server/firebaseAdmin";
+import { getEduLockAdminAuth, getEduLockAdminDb, getGasAdminDb } from "@/lib/server/firebaseAdmin";
 import { enforceAdminCapability } from "@/lib/server/adminPolicy";
 import { writeEduLockAuditEvent } from "@/lib/server/edulockAudit";
 
@@ -196,6 +196,11 @@ async function resetSchoolAdminDefaultPassword(payload: EduLockSuperPayload, aut
     updatedAt: now,
     lastLoginAt: typeof existingProfile?.lastLoginAt === "number" ? existingProfile.lastLoginAt : null,
   });
+  await auth.setCustomUserClaims(userRecord.uid, {
+    role: "admin",
+    schoolId,
+    npsn,
+  });
 
   await db.ref(`schools/${schoolId}`).update({ updatedAt: now });
   await writeEduLockAuditEvent(profile, {
@@ -278,15 +283,38 @@ async function toggleSchoolActive(payload: EduLockSuperPayload, authorizationHea
     throw new Error("schoolId tidak valid.");
   }
 
+  const db = getEduLockAdminDb();
+  const now = Date.now();
   const nextActive = payload.nextActive !== false;
-  await getEduLockAdminDb()
-    .ref(`schools/${schoolId}`)
-    .update({ isActive: nextActive, updatedAt: Date.now() });
+  const updates: Record<string, any> = {
+    [`schools/${schoolId}/isActive`]: nextActive,
+    [`schools/${schoolId}/serviceStatus/serviceActive`]: nextActive,
+    [`schools/${schoolId}/serviceStatus/updatedAt`]: now,
+    [`schools/${schoolId}/serviceStatus/updatedBy`]: normalizeActorEmail(profile.email || profile.uid || "super_admin"),
+    [`schools/${schoolId}/updatedAt`]: now,
+  };
+
+  if (!nextActive) {
+    const schoolStudentsSnap = await db.ref(`students_by_school/${schoolId}`).get();
+    const schoolStudents = schoolStudentsSnap.exists() ? schoolStudentsSnap.val() || {} : {};
+    for (const nisn of Object.keys(schoolStudents)) {
+      updates[`active_sessions/${nisn}`] = null;
+      updates[`active_sessions_by_school/${schoolId}/${nisn}`] = null;
+    }
+  }
+
+  await db.ref().update(updates);
+  await getGasAdminDb().ref().update({
+    [`schools/${schoolId}/isActive`]: nextActive,
+    [`schools/${schoolId}/serviceStatus/serviceActive`]: nextActive,
+    [`schools/${schoolId}/serviceStatus/updatedAt`]: now,
+    [`schools/${schoolId}/serviceStatus/updatedBy`]: normalizeActorEmail(profile.email || profile.uid || "super_admin"),
+  });
   await writeEduLockAuditEvent(profile, {
     type: "edulock.super.school_active_toggled",
     message: `Status sekolah ${schoolId} ${nextActive ? "diaktifkan" : "dinonaktifkan"}.`,
     schoolId,
-    metadata: { nextActive },
+    metadata: { nextActive, syncServiceActive: true },
   });
 }
 

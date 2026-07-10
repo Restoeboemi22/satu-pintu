@@ -50,7 +50,7 @@ const SUPER_NAV_GROUPS: EduLockNavGroup[] = [
     items: [
       { key: "tenants", label: "Tenants", icon: Network },
       { key: "admins", label: "Admin Sekolah", icon: Users },
-      { key: "command_center", label: "Command Center", icon: Command },
+      { key: "command_center", label: "Command Center / Uninstall", icon: Command },
     ],
   },
   {
@@ -679,10 +679,10 @@ function EduLockSuperAdminPageInner() {
   return (
     <EduLockWorkspaceShell
       title="Super Admin EduLock"
-      subtitle="Control plane lintas sekolah untuk tenant, policy keamanan, command center, audit, dan support yang kini menyatu dengan shell PortalKita."
+      subtitle="Control plane lintas sekolah untuk tenant, policy keamanan, monitoring, kode uninstall, audit, dan support EduLock."
       badge="MODE SUPER ADMIN"
       panelTitle="EduLock Control Plane"
-      panelDescription="Struktur submenu disejajarkan dengan admin sekolah: overview, operasional, keamanan, lalu konfigurasi."
+      panelDescription="Navigasi utama dipusatkan di sidebar kiri: overview, operasional, keamanan, lalu konfigurasi."
       navGroups={SUPER_NAV_GROUPS}
       activeKey={activeSection}
       onSelect={(key) => handleSelectSection(key as Section)}

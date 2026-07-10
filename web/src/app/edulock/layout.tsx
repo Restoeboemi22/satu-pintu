@@ -78,11 +78,15 @@ function EduLockLayoutInner({
       router.replace(`/edulock/login?returnTo=${encodeURIComponent(returnTo)}`);
       return;
     }
+    if (!isEduLockLoginRoute && edulockUser && edulockRole === "super_admin") {
+      router.replace("/edulock/super?section=dashboard");
+      return;
+    }
     if (edulockUser && isEduLockLoginRoute) {
       router.replace(requestedReturnTo);
       return;
     }
-  }, [edulockUser, isAuthenticated, isMounted, pathname, requestedReturnTo, router, user?.role, _hasHydrated, isEduLockHomeRoute, isEduLockLoginRoute, isEduLockSuperRoute, returnTo]);
+  }, [edulockRole, edulockUser, isAuthenticated, isMounted, pathname, requestedReturnTo, router, user?.role, _hasHydrated, isEduLockHomeRoute, isEduLockLoginRoute, isEduLockSuperRoute, returnTo]);
 
   if (!isMounted || !_hasHydrated) return <PortalGateState title="Memuat EduLock..." description="Menyiapkan sesi Portal." />;
   if (!isAuthenticated) return <PortalGateState title="Belum login." description="Silakan login admin terlebih dahulu." actionHref={portalLoginHref} actionLabel="Ke Login Admin" />;
@@ -99,6 +103,9 @@ function EduLockLayoutInner({
   if (!isEduLockLoginRoute && !isEduLockSuperRoute && !isEduLockHomeRoute) {
     if (edulockLoading) return <PortalGateState title="Memuat EduLock..." description="Menyiapkan sesi EduLock." />;
     if (!edulockUser) return <PortalGateState title="Perlu login EduLock." description="Silakan login terlebih dahulu untuk mengakses EduLock Admin Sekolah." actionHref="/edulock/login" actionLabel="Ke Login EduLock" />;
+    if (edulockRole === "super_admin") {
+      return <PortalGateState title="Mengalihkan ke Super Admin..." description="Sesi EduLock Anda adalah super admin, sehingga panel admin sekolah tidak dibuka." />;
+    }
   }
 
   return (

@@ -137,7 +137,7 @@ export function AuthRealtimeSync() {
         ? onValue(ref(edulockDb, `schools/${schoolId}`), (snapshot) => {
             if (!snapshot.exists()) return;
             const s: any = snapshot.val() || {};
-            if (s?.isActive === false) {
+            if (s?.isActive === false || s?.serviceStatus?.serviceActive === false) {
               void kick("school_inactive");
               return;
             }

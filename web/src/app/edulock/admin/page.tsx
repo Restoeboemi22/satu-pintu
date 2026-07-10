@@ -43,6 +43,32 @@ function isAdminTab(value: string): value is Tab {
   return ["dashboard", "monitoring", "codes", "classes", "geofencing", "students", "violations", "settings"].includes(value);
 }
 
+function normalizeCoordinate(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function calculateDistanceMeters(
+  fromLat: number,
+  fromLng: number,
+  toLat: number,
+  toLng: number
+): number {
+  const earthRadius = 6371000;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(toLat - fromLat);
+  const dLng = toRad(toLng - fromLng);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(fromLat)) * Math.cos(toRad(toLat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadius * c;
+}
+
 interface StudentRow {
   nisn: string;
   name?: string;
@@ -50,6 +76,8 @@ interface StudentRow {
   schoolId?: string;
   schoolName?: string;
   npsn?: string;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
   device_uuid?: string | null;
   deviceStatus?: string;
   lastUpdated?: number;
@@ -102,7 +130,7 @@ const WEEKDAY_ROWS = [
 export default function EduLockSchoolAdminPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { profile } = useEduLockAuth();
+  const { profile, role } = useEduLockAuth();
   const portalUser = useAuthStore((state) => state.user);
 
   const portalSchoolId = String(portalUser?.role === "admin" ? portalUser?.schoolId || "" : "").trim().toLowerCase();
@@ -112,6 +140,7 @@ export default function EduLockSchoolAdminPage() {
   const schoolId = (portalSchoolId || String(profile?.schoolId || "").trim()).toLowerCase();
   const schoolName = portalSchoolName || String(profile?.schoolName || "").trim();
   const npsn = portalNpsn || String(profile?.npsn || "").trim();
+  const isSuperAdminSession = portalUser?.role === "super_admin" || role === "super_admin";
 
   const callEduLockSecurityApi = async (
     method: "POST" | "PUT" | "DELETE",
@@ -231,6 +260,7 @@ export default function EduLockSchoolAdminPage() {
 
   type WeekdayKey = (typeof WEEKDAY_ROWS)[number]["key"];
   type WeekdaySchedule = { enabled: boolean; start: string; end: string };
+  const edulockScheduleManagedByGas = true;
 
   const [weekdaySchedule, setWeekdaySchedule] = useState<Record<WeekdayKey, WeekdaySchedule>>({
     mon: { enabled: true, start: "07:00", end: "14:00" },
@@ -262,6 +292,46 @@ export default function EduLockSchoolAdminPage() {
       }
     });
     return () => unsub();
+  }, [schoolId]);
+
+  useEffect(() => {
+    if (!schoolId) return;
+
+    const scopedRef = ref(database, `school_settings/${schoolId}/attendance/school_location`);
+    const legacyRef = ref(database, "school_location");
+    let scopedData: any = null;
+    let legacyData: any = null;
+
+    const applyLocation = () => {
+      const data =
+        scopedData && typeof scopedData === "object"
+          ? scopedData
+          : legacyData && typeof legacyData === "object"
+            ? legacyData
+            : null;
+
+      if (!data) return;
+      setSchoolConfig((prev) => ({
+        ...prev,
+        latitude: data.latitude ?? prev.latitude,
+        longitude: data.longitude ?? prev.longitude,
+        radius: data.radius ?? prev.radius,
+      }));
+    };
+
+    const unsubScoped = onValue(scopedRef, (snapshot) => {
+      scopedData = snapshot.val();
+      applyLocation();
+    });
+    const unsubLegacy = onValue(legacyRef, (snapshot) => {
+      legacyData = snapshot.val();
+      applyLocation();
+    });
+
+    return () => {
+      unsubScoped();
+      unsubLegacy();
+    };
   }, [schoolId]);
 
   useEffect(() => {
@@ -684,9 +754,10 @@ export default function EduLockSchoolAdminPage() {
   }, [schoolId, activeSessions]);
 
   const adminDisplayName = useMemo(() => {
+    if (isSuperAdminSession) return "Super Admin EduLock";
     const raw = String(schoolName || "").trim();
     return raw ? `Admin ${raw}` : "Admin Sekolah";
-  }, [schoolName]);
+  }, [isSuperAdminSession, schoolName]);
 
   const formatTime = (timestamp: number | null | undefined) => {
     if (!timestamp) return "-";
@@ -700,6 +771,18 @@ export default function EduLockSchoolAdminPage() {
   const isExpired = (timestamp: number | null | undefined) => {
     if (!timestamp) return false;
     return Date.now() > timestamp;
+  };
+
+  const schoolLatitude = normalizeCoordinate(schoolConfig.latitude);
+  const schoolLongitude = normalizeCoordinate(schoolConfig.longitude);
+
+  const getStudentDistanceMeters = (student: StudentRow) => {
+    const studentLatitude = normalizeCoordinate(student.latitude);
+    const studentLongitude = normalizeCoordinate(student.longitude);
+    if (studentLatitude == null || studentLongitude == null || schoolLatitude == null || schoolLongitude == null) {
+      return null;
+    }
+    return calculateDistanceMeters(studentLatitude, studentLongitude, schoolLatitude, schoolLongitude);
   };
 
   const stats = useMemo(() => {
@@ -1006,100 +1089,27 @@ export default function EduLockSchoolAdminPage() {
   };
 
   const handleSaveWeekdaySchedule = async () => {
-    if (!schoolId) return;
-    setLoading(true);
-    setStatusMessage({ type: "", text: "" });
-    try {
-      const parseMinutes = (hhmm: string) => {
-        const [h, m] = String(hhmm || "").split(":").map((v) => Number(v));
-        if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
-        if (h < 0 || h > 23 || m < 0 || m > 59) return null;
-        return h * 60 + m;
-      };
-
-      const updates: Record<string, any> = {};
-      WEEKDAY_ROWS.forEach((d) => {
-        const row = weekdaySchedule[d.key];
-        const startMin = parseMinutes(row.start);
-        const endMin = parseMinutes(row.end);
-        if (row.enabled && (startMin === null || endMin === null || endMin <= startMin)) {
-          throw new Error(`Jam tidak valid untuk ${d.label}. Pastikan Jam Pulang > Jam Masuk.`);
-        }
-        updates[`schools/${schoolId}/schedule/weekdays/${d.key}`] = {
-          enabled: Boolean(row.enabled),
-          start: String(row.start || "07:00"),
-          end: String(row.end || "14:00"),
-        };
-      });
-      updates[`schools/${schoolId}/schedule/updatedAt`] = Date.now();
-
-      await callEduLockSecurityApi("POST", {
-        action: "save-weekday-schedule",
-        schoolId,
-        weekdaySchedule,
-      });
-      setStatusMessage({ type: "success", text: "Jadwal sekolah berhasil disimpan." });
-      setTimeout(() => setStatusMessage({ type: "", text: "" }), 3000);
-    } catch (e: any) {
-      setStatusMessage({ type: "error", text: String(e?.message || e) });
-    } finally {
-      setLoading(false);
-    }
+    setStatusMessage({
+      type: "success",
+      text: "Jadwal EduLock mengikuti Pengaturan Sistem GAS Presensi. Ubah jam efektif dari halaman GAS.",
+    });
+    setTimeout(() => setStatusMessage({ type: "", text: "" }), 3500);
   };
 
   const handleAddHoliday = async () => {
-    if (!schoolId) return;
-    const date = String(holidayDateInput || "").trim();
-    const note = String(holidayNoteInput || "").trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      setStatusMessage({ type: "error", text: "Tanggal tidak valid. Gunakan format tanggal (yyyy-mm-dd)." });
-      setTimeout(() => setStatusMessage({ type: "", text: "" }), 3500);
-      return;
-    }
-    if (!note) {
-      setStatusMessage({ type: "error", text: "Keterangan wajib diisi." });
-      setTimeout(() => setStatusMessage({ type: "", text: "" }), 3500);
-      return;
-    }
-
-    setLoading(true);
-    setStatusMessage({ type: "", text: "" });
-    try {
-      await callEduLockSecurityApi("POST", {
-        action: "save-holiday",
-        schoolId,
-        date,
-        note,
-      });
-      setHolidayDateInput("");
-      setHolidayNoteInput("");
-      setStatusMessage({ type: "success", text: "Hari libur berhasil ditambahkan." });
-      setTimeout(() => setStatusMessage({ type: "", text: "" }), 3000);
-    } catch (e: any) {
-      setStatusMessage({ type: "error", text: String(e?.message || e) });
-    } finally {
-      setLoading(false);
-    }
+    setStatusMessage({
+      type: "success",
+      text: "Hari libur EduLock mengikuti Pengaturan Sistem GAS Presensi. Tambahkan dari halaman GAS.",
+    });
+    setTimeout(() => setStatusMessage({ type: "", text: "" }), 3500);
   };
 
   const handleDeleteHoliday = async (date: string) => {
-    if (!schoolId) return;
-    if (!window.confirm(`Hapus hari libur tanggal ${date}?`)) return;
-    setLoading(true);
-    setStatusMessage({ type: "", text: "" });
-    try {
-      await callEduLockSecurityApi("DELETE", {
-        action: "delete-holiday",
-        schoolId,
-        date,
-      });
-      setStatusMessage({ type: "success", text: "Hari libur dihapus." });
-      setTimeout(() => setStatusMessage({ type: "", text: "" }), 2500);
-    } catch (e: any) {
-      setStatusMessage({ type: "error", text: String(e?.message || e) });
-    } finally {
-      setLoading(false);
-    }
+    setStatusMessage({
+      type: "success",
+      text: `Hari libur ${date} mengikuti Pengaturan Sistem GAS Presensi. Hapus dari halaman GAS.`,
+    });
+    setTimeout(() => setStatusMessage({ type: "", text: "" }), 3500);
   };
 
   const resetDevice = async (nisnValue: string, name: string) => {
@@ -1266,28 +1276,6 @@ export default function EduLockSchoolAdminPage() {
       .catch((error: any) => {
         setStatusMessage({ type: "error", text: `Gagal mengupdate status: ${String(error?.message || error)}` });
       });
-  };
-
-  const handleSaveConfig = async () => {
-    if (!schoolId) {
-      setStatusMessage({ type: "error", text: "Sekolah admin belum ter-assign. Hubungi super admin." });
-      setTimeout(() => setStatusMessage({ type: "", text: "" }), 3000);
-      return;
-    }
-    setLoading(true);
-    try {
-      await callEduLockSecurityApi("POST", {
-        action: "save-config",
-        schoolId,
-        config: schoolConfig,
-      });
-      setStatusMessage({ type: "success", text: "Konfigurasi sekolah berhasil disimpan!" });
-      setTimeout(() => setStatusMessage({ type: "", text: "" }), 3000);
-    } catch (error: any) {
-      setStatusMessage({ type: "error", text: `Gagal menyimpan: ${String(error?.message || error)}` });
-    } finally {
-      setLoading(false);
-    }
   };
 
   const handleSaveGpsPolicy = async () => {
@@ -1727,6 +1715,13 @@ export default function EduLockSchoolAdminPage() {
                         const isActiveSession = filteredSessions.some((session) => session.nisn === student.nisn);
                         const lastSeenDiff = Date.now() - Number(student.lastUpdated || 0);
                         const isOnline = student.deviceStatus === "Online" || lastSeenDiff < 5 * 60 * 1000;
+                        const distanceMeters = getStudentDistanceMeters(student);
+                        const distanceLabel =
+                          distanceMeters == null
+                            ? "Jarak belum terbaca"
+                            : distanceMeters < 1000
+                              ? `${Math.round(distanceMeters)} m dari sekolah`
+                              : `${(distanceMeters / 1000).toFixed(2)} km dari sekolah`;
 
                         let statusPillClass = "chip";
                         let statusDot = "bg-slate-400";
@@ -1777,11 +1772,14 @@ export default function EduLockSchoolAdminPage() {
                               </div>
                             </td>
                             <td className="px-6 py-4">
-                              <div className="flex items-center gap-1.5">
-                                <MapPin className={`w-4 h-4 ${!isOnline ? "text-slate-500" : student.isInsideZone ? "text-emerald-300" : "text-rose-300"}`} />
-                                <span className={!isOnline ? "text-slate-500" : student.isInsideZone ? "text-slate-200" : "text-rose-200 font-medium"}>
-                                  {!isOnline ? "-" : student.isInsideZone ? "Di Sekolah" : "Luar Zona"}
-                                </span>
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-1.5">
+                                  <MapPin className={`w-4 h-4 ${!isOnline ? "text-slate-500" : student.isInsideZone ? "text-emerald-300" : "text-rose-300"}`} />
+                                  <span className={!isOnline ? "text-slate-500" : student.isInsideZone ? "text-slate-200" : "text-rose-200 font-medium"}>
+                                    {!isOnline ? "-" : student.isInsideZone ? "Di Sekolah" : "Luar Zona"}
+                                  </span>
+                                </div>
+                                <span className={`text-xs ${distanceMeters == null ? "text-slate-500" : "text-slate-300"}`}>{distanceLabel}</span>
                               </div>
                             </td>
                             <td className="px-6 py-4">
@@ -2168,6 +2166,15 @@ export default function EduLockSchoolAdminPage() {
                     </h3>
                   </div>
                   <div className="p-6">
+                    <div className="mb-5 rounded-2xl border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+                      Koordinat zona EduLock mengikuti sumber resmi dari `GAS > Manajemen Presensi > Presensi Sekolah > Pengaturan Sistem`.
+                      Admin EduLock tidak dapat mengubah titik lokasi secara manual dari halaman ini.
+                      <div className="mt-2">
+                        <Link href="/dashboard/attendance" className="font-semibold text-sky-200 hover:text-white">
+                          Buka halaman GAS Presensi
+                        </Link>
+                      </div>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       <div>
                         <label className="label">Koordinat Sekolah (Latitude, Longitude)</label>
@@ -2177,9 +2184,10 @@ export default function EduLockSchoolAdminPage() {
                               type="number"
                               step="any"
                               placeholder="Latitude (contoh: -6.200000)"
-                              className="input"
+                              className="input opacity-80"
                               value={String(schoolConfig.latitude ?? "")}
-                              onChange={(e) => setSchoolConfig((prev: any) => ({ ...prev, latitude: e.target.value }))}
+                              readOnly
+                              disabled
                             />
                           </div>
                           <div>
@@ -2187,43 +2195,35 @@ export default function EduLockSchoolAdminPage() {
                               type="number"
                               step="any"
                               placeholder="Longitude (contoh: 106.816666)"
-                              className="input"
+                              className="input opacity-80"
                               value={String(schoolConfig.longitude ?? "")}
-                              onChange={(e) => setSchoolConfig((prev: any) => ({ ...prev, longitude: e.target.value }))}
+                              readOnly
+                              disabled
                             />
                           </div>
                         </div>
                         <div className="text-xs text-slate-400 mb-6">
-                          Tips: Buka Google Maps, klik kanan pada lokasi sekolah, lalu salin koordinatnya.
+                          Data ini dibaca otomatis dari pengaturan lokasi presensi di GAS.
                         </div>
 
                         <label className="label">Radius Aman (Meter)</label>
                         <input
                           type="number"
-                          className="input mb-2"
+                          className="input mb-2 opacity-80"
                           value={String(schoolConfig.radius ?? "")}
-                          onChange={(e) => setSchoolConfig((prev: any) => ({ ...prev, radius: Number(e.target.value || 0) }))}
+                          readOnly
+                          disabled
                         />
                         <div className="text-xs text-slate-400 mb-6">
-                          Jarak toleransi dari titik pusat sekolah. Siswa dianggap Keluar Zona jika berada di luar radius ini.
+                          Radius aman mengikuti nilai radius absensi sekolah di GAS agar tidak terjadi mismatch operasional.
                         </div>
-
-                        <button type="button" onClick={handleSaveConfig} disabled={loading} className="btn-primary w-full md:w-auto px-5 py-2.5">
-                          {loading ? (
-                            "Menyimpan..."
-                          ) : (
-                            <>
-                              <Save className="w-4 h-4 mr-2" /> Simpan Konfigurasi
-                            </>
-                          )}
-                        </button>
                       </div>
 
                       <div className="glass-surface-sm p-6 flex flex-col items-center justify-center text-center">
                         <MapPin className="w-16 h-16 text-slate-400 mb-4" />
                         <div className="text-white font-medium mb-2">Preview Peta</div>
                         <div className="text-sm text-slate-400 mb-4">
-                          Pastikan koordinat yang Anda masukkan sudah benar sesuai lokasi sekolah.
+                          Preview ini mengikuti titik koordinat resmi dari GAS Presensi Sekolah.
                         </div>
                         {schoolConfig.latitude && schoolConfig.longitude ? (
                           <a
@@ -2338,11 +2338,11 @@ export default function EduLockSchoolAdminPage() {
                           <div className="flex items-center justify-between mb-4">
                             <div>
                               <div className="text-sm font-semibold text-white">Jadwal & Hari Efektif</div>
-                              <div className="text-xs text-slate-400 mt-1">Atur hari masuk sekolah dan jam operasional per-hari.</div>
+                              <div className="text-xs text-slate-400 mt-1">Jadwal ini mengikuti Pengaturan Sistem GAS Presensi agar jam masuk/pulang siswa selalu sinkron.</div>
                             </div>
                             <button type="button" onClick={handleSaveWeekdaySchedule} disabled={loading} className="btn-primary px-4 py-2 text-sm">
                               <Save className="w-4 h-4 mr-2" />
-                              Simpan
+                              Info
                             </button>
                           </div>
 
@@ -2355,6 +2355,7 @@ export default function EduLockSchoolAdminPage() {
                                     <input
                                       type="checkbox"
                                       checked={Boolean(row.enabled)}
+                                      disabled={edulockScheduleManagedByGas}
                                       onChange={(e) =>
                                         setWeekdaySchedule((prev) => ({
                                           ...prev,
@@ -2370,7 +2371,7 @@ export default function EduLockSchoolAdminPage() {
                                     <input
                                       type="time"
                                       value={String(row.start || "")}
-                                      disabled={!row.enabled}
+                                      disabled={!row.enabled || edulockScheduleManagedByGas}
                                       onChange={(e) =>
                                         setWeekdaySchedule((prev) => ({
                                           ...prev,
@@ -2383,7 +2384,7 @@ export default function EduLockSchoolAdminPage() {
                                     <input
                                       type="time"
                                       value={String(row.end || "")}
-                                      disabled={!row.enabled}
+                                      disabled={!row.enabled || edulockScheduleManagedByGas}
                                       onChange={(e) =>
                                         setWeekdaySchedule((prev) => ({
                                           ...prev,
@@ -2399,18 +2400,18 @@ export default function EduLockSchoolAdminPage() {
                           </div>
 
                           <div className="text-xs text-slate-400 mt-4">
-                            Jam Masuk/Pulang akan digunakan sebagai patokan waktu sekolah dan penguncian EduLock.
+                            Sumber pengaturan: GAS Presensi. EduLock membaca hasil sinkronisasi agar tidak terjadi mismatch jam operasional.
                           </div>
                         </div>
 
                         <div className="glass-surface-sm p-6 lg:w-[320px] xl:w-[340px] lg:justify-self-end">
                           <div className="text-sm font-semibold text-white">Hari Libur & Tanggal Merah</div>
-                          <div className="text-xs text-slate-400 mt-1">Tambahkan tanggal libur agar EduLock otomatis bebas pada hari tersebut.</div>
+                          <div className="text-xs text-slate-400 mt-1">Hari libur mengikuti GAS Presensi agar aturan bebas EduLock konsisten.</div>
 
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end mt-4">
                             <div>
                               <label className="label">Tanggal</label>
-                              <input type="date" value={holidayDateInput} onChange={(e) => setHolidayDateInput(e.target.value)} className="input" />
+                              <input type="date" value={holidayDateInput} onChange={(e) => setHolidayDateInput(e.target.value)} className="input" disabled={edulockScheduleManagedByGas} />
                             </div>
                             <div className="md:col-span-2">
                               <label className="label">Keterangan</label>
@@ -2420,6 +2421,7 @@ export default function EduLockSchoolAdminPage() {
                                 onChange={(e) => setHolidayNoteInput(e.target.value)}
                                 className="input"
                                 placeholder="Contoh: Hari Kemerdekaan RI"
+                                disabled={edulockScheduleManagedByGas}
                               />
                             </div>
                           </div>
@@ -2427,7 +2429,7 @@ export default function EduLockSchoolAdminPage() {
                           <div className="mt-3 flex justify-end">
                             <button type="button" onClick={handleAddHoliday} disabled={loading} className="btn-primary px-5 py-2.5 text-sm">
                               <Plus className="w-4 h-4 mr-2" />
-                              Tambah
+                              Info
                             </button>
                           </div>
 
@@ -2445,9 +2447,9 @@ export default function EduLockSchoolAdminPage() {
                                     <button
                                       type="button"
                                       onClick={() => handleDeleteHoliday(h.date)}
-                                      disabled={loading}
+                                      disabled={loading || edulockScheduleManagedByGas}
                                       className="p-2 text-rose-200 hover:bg-white/10 rounded-lg transition-colors"
-                                      title="Hapus"
+                                      title={edulockScheduleManagedByGas ? "Kelola dari GAS Presensi" : "Hapus"}
                                     >
                                       <Trash2 className="w-4 h-4" />
                                     </button>
@@ -2500,26 +2502,26 @@ export default function EduLockSchoolAdminPage() {
 
                         <div>
                           <label className="label">Latitude</label>
-                          <input value={String(schoolConfig.latitude || "")} onChange={(e) => setSchoolConfig((p: any) => ({ ...p, latitude: e.target.value }))} className="input" />
+                          <input value={String(schoolConfig.latitude || "")} readOnly disabled className="input opacity-80" />
                         </div>
                         <div>
                           <label className="label">Longitude</label>
-                          <input value={String(schoolConfig.longitude || "")} onChange={(e) => setSchoolConfig((p: any) => ({ ...p, longitude: e.target.value }))} className="input" />
+                          <input value={String(schoolConfig.longitude || "")} readOnly disabled className="input opacity-80" />
                         </div>
                         <div>
                           <label className="label">Radius (meter)</label>
                           <input
                             type="number"
                             value={String(schoolConfig.radius ?? 0)}
-                            onChange={(e) => setSchoolConfig((p: any) => ({ ...p, radius: Number(e.target.value || 0) }))}
-                            className="input"
+                            readOnly
+                            disabled
+                            className="input opacity-80"
                           />
                         </div>
                         <div className="flex items-end">
-                          <button type="button" disabled={loading} onClick={handleSaveConfig} className="btn-primary w-full">
-                            <Key className="w-4 h-4" />
-                            Simpan Konfigurasi
-                          </button>
+                          <div className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
+                            Koordinat zona mengikuti GAS Presensi Sekolah dan tidak dapat diedit dari workspace EduLock.
+                          </div>
                         </div>
                       </div>
                     </div>

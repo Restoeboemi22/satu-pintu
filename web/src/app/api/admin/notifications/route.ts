@@ -61,6 +61,16 @@ function getNodePath(channel: NotificationChannel) {
   return channel === "teacher" ? "system_announcements/teacher" : "system_announcements/student";
 }
 
+function getScopedNodePath(channel: NotificationChannel, schoolId?: string | null) {
+  const normalizedSchoolId = normalizeSchoolScope(schoolId);
+  if (!normalizedSchoolId) {
+    return null;
+  }
+  return channel === "teacher"
+    ? `system_announcements_by_school/${normalizedSchoolId}/teacher`
+    : `system_announcements_by_school/${normalizedSchoolId}/student`;
+}
+
 async function createNotification(payload: NotificationMutationPayload, authorizationHeader?: string | null) {
   const profile = await requireEduLockAdminProfile(authorizationHeader);
   const targetType = ALLOWED_TARGET_TYPES.includes(payload.targetType as NotificationTargetType)
@@ -88,8 +98,10 @@ async function createNotification(payload: NotificationMutationPayload, authoriz
 
   const channel = resolveChannel(targetType);
   const nodePath = getNodePath(channel);
+  const scopedNodePath = getScopedNodePath(channel, schoolId);
   const now = Date.now();
   const notificationRef = getGasAdminDb().ref(nodePath).push();
+  const notificationId = notificationRef.key || String(now);
   const notificationData = {
     title,
     content: message,
@@ -101,13 +113,20 @@ async function createNotification(payload: NotificationMutationPayload, authoriz
     schoolId: schoolId || null,
   };
 
-  await notificationRef.set(notificationData);
+  const updates: Record<string, unknown> = {
+    [`${nodePath}/${notificationId}`]: notificationData,
+  };
+  if (scopedNodePath) {
+    updates[`${scopedNodePath}/${notificationId}`] = notificationData;
+  }
+
+  await getGasAdminDb().ref().update(updates);
 
   await writeEduLockAuditEvent(profile, {
     type: "NOTIFICATION_CREATE",
-    message: `Broadcast notifikasi ${notificationRef.key || "-"} dibuat.`,
+    message: `Broadcast notifikasi ${notificationId} dibuat.`,
     schoolId: schoolId || undefined,
-    targetId: notificationRef.key || undefined,
+    targetId: notificationId,
     metadata: {
       channel,
       targetType,
@@ -116,7 +135,7 @@ async function createNotification(payload: NotificationMutationPayload, authoriz
   });
 
   return {
-    id: notificationRef.key || String(now),
+    id: notificationId,
     title,
     message,
     targetType,
@@ -158,7 +177,16 @@ async function deleteNotification(payload: NotificationMutationPayload, authoriz
     throw new Error("schoolId notifikasi tidak cocok dengan permintaan.");
   }
 
-  await notificationRef.remove();
+  const deletions: Record<string, null> = {
+    [`${nodePath}/${id}`]: null,
+  };
+  const effectiveSchoolId = recordSchoolId || schoolId;
+  const effectiveScopedNodePath = getScopedNodePath(channel, effectiveSchoolId);
+  if (effectiveScopedNodePath) {
+    deletions[`${effectiveScopedNodePath}/${id}`] = null;
+  }
+
+  await getGasAdminDb().ref().update(deletions);
 
   await writeEduLockAuditEvent(profile, {
     type: "NOTIFICATION_DELETE",
@@ -201,7 +229,16 @@ async function clearHistory(payload: NotificationMutationPayload, authorizationH
       continue;
     }
 
-    await notificationRef.remove();
+    const deletions: Record<string, null> = {
+      [`${nodePath}/${id}`]: null,
+    };
+    const effectiveSchoolId = recordSchoolId || schoolId;
+    const effectiveScopedNodePath = getScopedNodePath(channel, effectiveSchoolId);
+    if (effectiveScopedNodePath) {
+      deletions[`${effectiveScopedNodePath}/${id}`] = null;
+    }
+
+    await getGasAdminDb().ref().update(deletions);
     deletedCount += 1;
   }
 

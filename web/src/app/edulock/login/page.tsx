@@ -97,25 +97,11 @@ function EduLockLoginPageInner() {
 
       setLoading(true);
       try {
-        const schoolIdSnap = await get(ref(edulockDb, `npsn_index/${gaspaNpsn}`));
-        const schoolId = schoolIdSnap.exists() ? String(schoolIdSnap.val() || "") : "";
-        if (!schoolId) {
-          setError("NPSN tidak ditemukan atau belum didaftarkan oleh super admin.");
-          return;
-        }
-
-        const schoolSnap = await get(ref(edulockDb, `schools/${schoolId}`));
-        const school = schoolSnap.exists() ? (schoolSnap.val() || {}) : null;
-        const isActive = school?.isActive !== false;
-        if (!isActive) {
-          setError("Sekolah nonaktif. Hubungi super admin.");
-          return;
-        }
-
         const systemEmail = `${String(gaspaNpsn)}@edulock.local`;
         try {
           setPassword("admin123");
           await signInWithEmailAndPassword(edulockAuth, systemEmail, "admin123");
+          await callEduLockAuthApi({ action: "sync-profile" }, true).catch(() => {});
           router.replace(safeReturnTo);
           return;
         } catch (eTry: any) {
@@ -200,29 +186,8 @@ function EduLockLoginPageInner() {
       }
 
       const npsn = normalizeNpsn(raw);
-      const schoolIdSnap = await get(ref(edulockDb, `npsn_index/${npsn}`));
-      const schoolId = schoolIdSnap.exists() ? String(schoolIdSnap.val() || "") : "";
-      if (!schoolId) {
-        setError("NPSN tidak ditemukan atau belum didaftarkan oleh super admin.");
-        return;
-      }
-
-      const schoolSnap = await get(ref(edulockDb, `schools/${schoolId}`));
-      const school = schoolSnap.exists() ? (schoolSnap.val() || {}) : null;
-      const isActive = school?.isActive !== false;
-      const adminAccessActive = isSchoolAdminAccessActive(school);
-      const schoolName = String(school?.name || "");
       const systemEmail = `${String(npsn)}@edulock.local`;
       const isDefaultPassword = String(password) === "admin123";
-
-      if (!isActive) {
-        setError("Sekolah nonaktif. Hubungi super admin.");
-        return;
-      }
-      if (!adminAccessActive) {
-        setError("Akses admin sekolah dinonaktifkan oleh super admin.");
-        return;
-      }
 
       try {
         await signInWithEmailAndPassword(edulockAuth, systemEmail, password);

@@ -350,6 +350,7 @@ async function setUninstallAuthorization(payload: EduLockSecurityPayload, author
 
   await getEduLockAdminDb().ref(`students/${nisn}`).update({
     uninstall_authorized: Boolean(payload.isAuthorized),
+    uninstall_authorized_until: Boolean(payload.isAuthorized) ? Date.now() + 5 * 60 * 1000 : 0,
   });
   await writeEduLockAuditEvent(profile, {
     type: "edulock.security.uninstall_authorization_changed",
@@ -372,6 +373,7 @@ async function bulkGrade9UninstallAuthorization(payload: EduLockSecurityPayload,
   const updates: Record<string, any> = {};
   for (const student of targets) {
     updates[`students/${student.nisn}/uninstall_authorized`] = Boolean(payload.isAuthorized);
+    updates[`students/${student.nisn}/uninstall_authorized_until`] = Boolean(payload.isAuthorized) ? Date.now() + 5 * 60 * 1000 : 0;
   }
   await getEduLockAdminDb().ref().update(updates);
   await writeEduLockAuditEvent(profile, {
@@ -384,27 +386,10 @@ async function bulkGrade9UninstallAuthorization(payload: EduLockSecurityPayload,
 }
 
 async function saveSchoolConfig(payload: EduLockSecurityPayload, authorizationHeader?: string | null) {
-  const profile = await requireEduLockAdminProfile(authorizationHeader);
-  const schoolId = normalizeSchoolId(profile, payload.schoolId);
-  const config = payload.config || {};
-  const nextConfig = {
-    latitude: normalizeText(config.latitude),
-    longitude: normalizeText(config.longitude),
-    radius: Number(config.radius || 100),
-    startTime: normalizeText(config.startTime || "07:00"),
-    endTime: normalizeText(config.endTime || "14:00"),
-    is_holiday_mode: Boolean(config.is_holiday_mode),
-    is_active_protection: config.is_active_protection !== false,
-    updatedAt: Date.now(),
-  };
-
-  await getEduLockAdminDb().ref(`schools/${schoolId}/config`).set(nextConfig);
-  await writeEduLockAuditEvent(profile, {
-    type: "edulock.security.school_config_saved",
-    message: "Konfigurasi proteksi sekolah diperbarui.",
-    schoolId,
-    metadata: { radius: nextConfig.radius, startTime: nextConfig.startTime, endTime: nextConfig.endTime },
-  });
+  await requireEduLockAdminProfile(authorizationHeader);
+  throw new Error(
+    "Koordinat lokasi sekolah EduLock mengikuti sumber GAS Presensi Sekolah. Ubah dari GAS > Manajemen Presensi > Presensi Sekolah > Pengaturan Sistem."
+  );
 }
 
 async function saveGpsPolicy(payload: EduLockSecurityPayload, authorizationHeader?: string | null) {
@@ -553,7 +538,11 @@ async function resetStudentDevice(payload: EduLockSecurityPayload, authorization
   }
 
   await requireStudentInSchool(nisn, schoolId);
-  await getEduLockAdminDb().ref(`students/${nisn}/device_uuid`).remove();
+  await getEduLockAdminDb().ref().update({
+    [`students/${nisn}/device_uuid`]: "",
+    [`active_sessions/${nisn}`]: null,
+    [`active_sessions_by_school/${schoolId}/${nisn}`]: null,
+  });
   await writeEduLockAuditEvent(profile, {
     type: "edulock.admin.student_device_reset",
     message: `Device siswa ${nisn} di-reset.`,
