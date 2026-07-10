@@ -2,8 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { database } from '@/lib/firebase';
 import { equalTo, onValue, orderByChild, query as rtdbQuery, ref, remove, Unsubscribe } from 'firebase/database';
-import { edulockAuth } from '@/lib/edulockFirebase';
-import { callAdminApi, hasEduLockAdminSession } from '@/lib/callAdminApi';
+import { callAdminApi } from '@/lib/callAdminApi';
 import { useAuthStore } from '@/store/useAuthStore';
 
 export interface AttendanceLog {
@@ -156,7 +155,8 @@ export const useAttendanceStore = create<AttendanceStore>()(
       })),
 
       initScheduleSync: () => {
-        const scope = String(get().schoolContextId || "").trim().toLowerCase();
+        const authUser = useAuthStore.getState().user;
+        const scope = normalizeSchoolScope(get().schoolContextId || authUser?.schoolId);
         const scopedRef = scope ? ref(database, `school_settings/${scope}/attendance/schedules`) : null;
         const legacyRef = ref(database, "schedules");
 
@@ -209,7 +209,8 @@ export const useAttendanceStore = create<AttendanceStore>()(
       },
 
       initPrayerScheduleSync: () => {
-        const scope = String(get().schoolContextId || "").trim().toLowerCase();
+        const authUser = useAuthStore.getState().user;
+        const scope = normalizeSchoolScope(get().schoolContextId || authUser?.schoolId);
         const scopedRef = scope ? ref(database, `school_settings/${scope}/prayer/schedules`) : null;
         const legacyRef = ref(database, "prayer_schedules");
 
@@ -262,7 +263,8 @@ export const useAttendanceStore = create<AttendanceStore>()(
       },
 
       initHolidaySync: () => {
-        const scope = String(get().schoolContextId || "").trim().toLowerCase();
+        const authUser = useAuthStore.getState().user;
+        const scope = normalizeSchoolScope(get().schoolContextId || authUser?.schoolId);
         const scopedRef = scope ? ref(database, `school_settings/${scope}/attendance/holidays`) : null;
         const legacyRef = ref(database, "holidays");
 
@@ -338,105 +340,45 @@ export const useAttendanceStore = create<AttendanceStore>()(
 
       saveScheduleToFirebase: async () => {
         const { schedules } = get();
-        const scope = String(get().schoolContextId || "").trim().toLowerCase();
+        const authUser = useAuthStore.getState().user;
+        const scope = normalizeSchoolScope(get().schoolContextId || authUser?.schoolId);
 
-        const currentUser = edulockAuth.currentUser;
-        if (!currentUser) {
-          throw new Error("Sesi admin tidak aktif. Silakan login ulang.");
-        }
-        const idToken = await currentUser.getIdToken();
-        const response = await fetch("/api/admin/attendance-settings", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({
-            action: "save-attendance-schedules",
-            schoolId: scope || undefined,
-            schedules,
-          }),
+        await callAdminApi("/api/admin/attendance-settings", "POST", {
+          action: "save-attendance-schedules",
+          schoolId: scope || undefined,
+          schedules,
         });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok || result?.success === false) {
-          throw new Error(String(result?.message || "Gagal menyimpan jadwal presensi."));
-        }
       },
 
       savePrayerScheduleToFirebase: async () => {
         const { prayerSchedules } = get();
-        const scope = String(get().schoolContextId || "").trim().toLowerCase();
-        const currentUser = edulockAuth.currentUser;
-        if (!currentUser) {
-          throw new Error("Sesi admin tidak aktif. Silakan login ulang.");
-        }
-        const idToken = await currentUser.getIdToken();
-        const response = await fetch("/api/admin/attendance-settings", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({
-            action: "save-prayer-schedules",
-            schoolId: scope || undefined,
-            schedules: prayerSchedules,
-          }),
+        const authUser = useAuthStore.getState().user;
+        const scope = normalizeSchoolScope(get().schoolContextId || authUser?.schoolId);
+        await callAdminApi("/api/admin/attendance-settings", "POST", {
+          action: "save-prayer-schedules",
+          schoolId: scope || undefined,
+          schedules: prayerSchedules,
         });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok || result?.success === false) {
-          throw new Error(String(result?.message || "Gagal menyimpan jadwal sholat."));
-        }
       },
 
       addHoliday: async (holiday) => {
-        const scope = String(get().schoolContextId || "").trim().toLowerCase();
-        const currentUser = edulockAuth.currentUser;
-        if (!currentUser) {
-          throw new Error("Sesi admin tidak aktif. Silakan login ulang.");
-        }
-        const idToken = await currentUser.getIdToken();
-        const response = await fetch("/api/admin/attendance-settings", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({
-            action: "add-holiday",
-            schoolId: scope || undefined,
-            holiday,
-          }),
+        const authUser = useAuthStore.getState().user;
+        const scope = normalizeSchoolScope(get().schoolContextId || authUser?.schoolId);
+        await callAdminApi("/api/admin/attendance-settings", "POST", {
+          action: "add-holiday",
+          schoolId: scope || undefined,
+          holiday,
         });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok || result?.success === false) {
-          throw new Error(String(result?.message || "Gagal menambahkan hari libur."));
-        }
       },
 
       removeHoliday: async (id) => {
-        const scope = String(get().schoolContextId || "").trim().toLowerCase();
-        const currentUser = edulockAuth.currentUser;
-        if (!currentUser) {
-          throw new Error("Sesi admin tidak aktif. Silakan login ulang.");
-        }
-        const idToken = await currentUser.getIdToken();
-        const response = await fetch("/api/admin/attendance-settings", {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({
-            action: "remove-holiday",
-            schoolId: scope || undefined,
-            holiday: { id },
-          }),
+        const authUser = useAuthStore.getState().user;
+        const scope = normalizeSchoolScope(get().schoolContextId || authUser?.schoolId);
+        await callAdminApi("/api/admin/attendance-settings", "DELETE", {
+          action: "remove-holiday",
+          schoolId: scope || undefined,
+          holiday: { id },
         });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok || result?.success === false) {
-          throw new Error(String(result?.message || "Gagal menghapus hari libur."));
-        }
       },
 
       updateLocation: (updates) => set((state) => ({
@@ -445,38 +387,24 @@ export const useAttendanceStore = create<AttendanceStore>()(
 
       saveLocationToFirebase: async () => {
         const { location } = get();
-        const scope = String(get().schoolContextId || "").trim().toLowerCase();
+        const authUser = useAuthStore.getState().user;
+        const scope = normalizeSchoolScope(get().schoolContextId || authUser?.schoolId);
         const latitude = Number((location as any)?.latitude);
         const longitude = Number((location as any)?.longitude);
         const radius = Number((location as any)?.radius);
         if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(radius)) {
           throw new Error("Koordinat tidak valid. Pastikan Latitude/Longitude/Radius berisi angka (gunakan titik, bukan koma).");
         }
-        const currentUser = edulockAuth.currentUser;
-        if (!currentUser) {
-          throw new Error("Sesi admin tidak aktif. Silakan login ulang.");
-        }
-        const idToken = await currentUser.getIdToken();
-        const response = await fetch("/api/admin/attendance-settings", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({
-            action: "save-school-location",
-            schoolId: scope || undefined,
-            location: { latitude, longitude, radius },
-          }),
+        await callAdminApi("/api/admin/attendance-settings", "POST", {
+          action: "save-school-location",
+          schoolId: scope || undefined,
+          location: { latitude, longitude, radius },
         });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok || result?.success === false) {
-          throw new Error(String(result?.message || "Gagal menyimpan lokasi sekolah."));
-        }
       },
 
       initLocationSync: () => {
-        const scope = String(get().schoolContextId || "").trim().toLowerCase();
+        const authUser = useAuthStore.getState().user;
+        const scope = normalizeSchoolScope(get().schoolContextId || authUser?.schoolId);
         const scopedRef = scope ? ref(database, `school_settings/${scope}/attendance/school_location`) : null;
         const legacyRef = ref(database, "school_location");
 
@@ -519,38 +447,24 @@ export const useAttendanceStore = create<AttendanceStore>()(
 
       saveMushollaLocationToFirebase: async () => {
         const { mushollaLocation } = get();
-        const scope = String(get().schoolContextId || "").trim().toLowerCase();
+        const authUser = useAuthStore.getState().user;
+        const scope = normalizeSchoolScope(get().schoolContextId || authUser?.schoolId);
         const latitude = Number((mushollaLocation as any)?.latitude);
         const longitude = Number((mushollaLocation as any)?.longitude);
         const radius = Number((mushollaLocation as any)?.radius);
         if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(radius)) {
           throw new Error("Koordinat musholla tidak valid. Pastikan Latitude/Longitude/Radius berisi angka (gunakan titik, bukan koma).");
         }
-        const currentUser = edulockAuth.currentUser;
-        if (!currentUser) {
-          throw new Error("Sesi admin tidak aktif. Silakan login ulang.");
-        }
-        const idToken = await currentUser.getIdToken();
-        const response = await fetch("/api/admin/attendance-settings", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken}`,
-          },
-          body: JSON.stringify({
-            action: "save-musholla-location",
-            schoolId: scope || undefined,
-            location: { latitude, longitude, radius },
-          }),
+        await callAdminApi("/api/admin/attendance-settings", "POST", {
+          action: "save-musholla-location",
+          schoolId: scope || undefined,
+          location: { latitude, longitude, radius },
         });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok || result?.success === false) {
-          throw new Error(String(result?.message || "Gagal menyimpan lokasi musholla."));
-        }
       },
 
       initMushollaLocationSync: () => {
-        const scope = String(get().schoolContextId || "").trim().toLowerCase();
+        const authUser = useAuthStore.getState().user;
+        const scope = normalizeSchoolScope(get().schoolContextId || authUser?.schoolId);
         const scopedRef = scope ? ref(database, `school_settings/${scope}/prayer/musholla_location`) : null;
         const legacyRef = ref(database, "musholla_location");
 
@@ -589,15 +503,12 @@ export const useAttendanceStore = create<AttendanceStore>()(
 
       deleteAllLogs: async () => {
         try {
-            const schoolId = String(get().schoolContextId || "").trim().toLowerCase();
-            if (hasEduLockAdminSession()) {
-              await callAdminApi("/api/admin/attendance-logs", "POST", {
-                action: "delete-all",
-                schoolId: schoolId || undefined,
-              });
-            } else {
-              throw new Error("Hapus semua log presensi hanya boleh dilakukan dari sesi admin terautentikasi.");
-            }
+            const authUser = useAuthStore.getState().user;
+            const schoolId = normalizeSchoolScope(get().schoolContextId || authUser?.schoolId);
+            await callAdminApi("/api/admin/attendance-logs", "POST", {
+              action: "delete-all",
+              schoolId: schoolId || undefined,
+            });
             set({ logs: [], attendanceLog: [] });
         } catch (error) {
             console.error("Error deleting all attendance logs:", error);
