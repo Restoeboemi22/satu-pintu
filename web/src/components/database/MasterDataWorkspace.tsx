@@ -1268,8 +1268,8 @@ function MasterStudentsContent() {
       return;
     }
 
-    const sessionsRef = ref(edulockDb, `active_sessions_by_school/${schoolId}`);
-    const unsub = onValue(sessionsRef, (snap) => {
+    const presenceRef = ref(edulockDb, `presence/${schoolId}`);
+    const unsub = onValue(presenceRef, (snap) => {
       const data = snap.val();
       if (!data || typeof data !== "object") {
         setActiveSessions([]);
