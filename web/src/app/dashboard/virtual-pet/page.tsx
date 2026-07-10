@@ -386,27 +386,65 @@ export default function VirtualPetPage() {
         }
     };
 
-    // Filtered Pets for Table (Students at Risk)
-    const riskPets = useMemo(() => {
-        const mappedPets = scopedPets.map((p) => {
+    const petRows = useMemo(() => {
+        return scopedPets.map((p) => {
             const student = studentByIdentity.get(normalizeIdentity(p.studentId));
             const risk = analyzePetRisk(p);
+            const isAtRisk =
+                risk.isDead || risk.isSick || risk.isSad || risk.isStarving || risk.isLowStatus;
 
             return {
                 ...p,
                 studentName: student?.name || p.studentName || p.petName || 'Unknown Student',
                 studentClass: student?.class || '-',
                 risk,
+                isAtRisk,
             };
         });
+    }, [scopedPets, studentByIdentity]);
 
-        return mappedPets.filter((p) =>
-            p.risk.isDead || p.risk.isSick || p.risk.isSad || p.risk.isStarving || p.risk.isLowStatus
-        ).filter((p) =>
-            p.studentName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-            p.petName.toLowerCase().includes(searchTerm.toLowerCase())
+    // Keep all at-risk students visible even when a search term is active.
+    // Search should help surface a target student first, not hide other risky rows.
+    const riskPets = useMemo(() => {
+        const normalizedSearch = searchTerm.trim().toLowerCase();
+
+        return petRows
+            .filter((p) => p.isAtRisk)
+            .sort((a, b) => {
+                if (!normalizedSearch) return 0;
+
+                const aMatches =
+                    a.studentName.toLowerCase().includes(normalizedSearch) ||
+                    a.petName.toLowerCase().includes(normalizedSearch) ||
+                    normalizeIdentity(a.studentId).includes(normalizedSearch);
+                const bMatches =
+                    b.studentName.toLowerCase().includes(normalizedSearch) ||
+                    b.petName.toLowerCase().includes(normalizedSearch) ||
+                    normalizeIdentity(b.studentId).includes(normalizedSearch);
+
+                if (aMatches === bMatches) return 0;
+                return aMatches ? -1 : 1;
+            });
+    }, [petRows, searchTerm]);
+
+    const searchedPet = useMemo(() => {
+        const normalizedSearch = searchTerm.trim().toLowerCase();
+        if (!normalizedSearch) return null;
+
+        const exactMatch = petRows.find((pet) =>
+            normalizeIdentity(pet.studentName) === normalizedSearch ||
+            normalizeIdentity(pet.petName) === normalizedSearch ||
+            normalizeIdentity(pet.studentId) === normalizedSearch
         );
-    }, [scopedPets, searchTerm, studentByIdentity]);
+
+        if (exactMatch) return exactMatch;
+
+        return petRows.find((pet) =>
+            pet.studentName.toLowerCase().includes(normalizedSearch) ||
+            pet.petName.toLowerCase().includes(normalizedSearch) ||
+            normalizeIdentity(pet.studentId).includes(normalizedSearch)
+        ) || null;
+    }, [petRows, searchTerm]);
 
     const reviveHistoryRows = useMemo(() => {
         return reviveHistory.map((item) => {
@@ -510,6 +548,59 @@ export default function VirtualPetPage() {
                                     className="w-full pl-10 pr-4 py-2 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                             </div>
+
+                            {searchTerm.trim() ? (
+                                searchedPet ? (
+                                    <div className="rounded-xl border border-slate-700 bg-slate-900/30 p-4">
+                                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                            <div>
+                                                <div className="text-sm font-bold text-slate-100">
+                                                    {searchedPet.studentName}
+                                                </div>
+                                                <div className="text-xs font-semibold text-slate-400">
+                                                    {searchedPet.studentClass} | Pet {searchedPet.petName.toUpperCase()} | Lvl {searchedPet.stats.level}
+                                                </div>
+                                            </div>
+                                            {(() => {
+                                                const condition = derivePetCondition(searchedPet, searchedPet.risk);
+                                                return (
+                                                    <div className="space-y-1">
+                                                        <div className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${condition.className}`}>
+                                                            {condition.label}
+                                                        </div>
+                                                        {condition.sublabel ? (
+                                                            <div className="text-[11px] font-semibold text-slate-400">
+                                                                {condition.sublabel}
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
+                                        <div className="mt-3 text-xs font-medium text-slate-300">
+                                            {searchedPet.isAtRisk ? (
+                                                <span>
+                                                    Siswa ini sedang masuk daftar <span className="font-bold text-red-400">Students at Risk</span>.
+                                                </span>
+                                            ) : (
+                                                <span>
+                                                    Siswa ditemukan, tetapi kondisi pet saat ini <span className="font-bold text-green-400">tidak termasuk at risk</span>.
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/20 px-4 py-3 text-sm font-medium text-slate-400">
+                                        Tidak ditemukan pet untuk kata kunci <span className="font-bold text-slate-200">{searchTerm}</span>.
+                                    </div>
+                                )
+                            ) : null}
+
+                            {searchTerm.trim() ? (
+                                <div className="rounded-xl border border-slate-700 bg-slate-900/20 px-4 py-3 text-sm font-medium text-slate-400">
+                                    Daftar <span className="font-bold text-slate-200">Students at Risk</span> tetap menampilkan semua siswa berisiko. Hasil yang cocok dengan pencarian diprioritaskan di urutan teratas.
+                                </div>
+                            ) : null}
 
                             {/* Table */}
                             <div className="overflow-x-auto">
