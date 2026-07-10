@@ -38,15 +38,6 @@ type StudentRow = {
   updatedAt?: number;
 };
 
-type ActiveSessionRow = {
-  nisn: string;
-  isOnline?: boolean;
-  deviceStatus?: string;
-  lastUpdated?: number;
-  updatedAt?: number;
-  lastSeen?: number;
-};
-
 type TeacherRow = {
   nuptk: string;
   name: string;
@@ -378,7 +369,6 @@ function MasterStudentsContent() {
   });
 
   const [studentRows, setStudentRows] = useState<StudentRow[]>([]);
-  const [activeSessions, setActiveSessions] = useState<ActiveSessionRow[]>([]);
   const [teacherRows, setTeacherRows] = useState<TeacherRow[]>([]);
   const [staffRows, setStaffRows] = useState<StaffRow[]>([]);
   const [tatibRows, setTatibRows] = useState<TatibRow[]>([]);
@@ -387,7 +377,6 @@ function MasterStudentsContent() {
   const [status, setStatus] = useState<{ type: "" | "success" | "error"; text: string }>({ type: "", text: "" });
   const [busy, setBusy] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<number>(0);
-  const [statusNow, setStatusNow] = useState<number>(() => Date.now());
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ nisn: "", name: "", gender: "L" as "L" | "P", religion: "ISLAM" as "ISLAM" | "NON_ISLAM", class: "" });
@@ -1254,44 +1243,6 @@ function MasterStudentsContent() {
   }, [activeSub]);
 
   useEffect(() => {
-    if (activeSub !== "students") return;
-    setStatusNow(Date.now());
-    const timer = window.setInterval(() => setStatusNow(Date.now()), 30000);
-    return () => window.clearInterval(timer);
-  }, [activeSub]);
-
-  useEffect(() => {
-    if (!mounted || !_hasHydrated) return;
-    if (!isAuthenticated || user?.role !== "admin") return;
-    if (activeSub !== "students" || !schoolId) {
-      setActiveSessions([]);
-      return;
-    }
-
-    const presenceRef = ref(edulockDb, `presence/${schoolId}`);
-    const unsub = onValue(presenceRef, (snap) => {
-      const data = snap.val();
-      if (!data || typeof data !== "object") {
-        setActiveSessions([]);
-        return;
-      }
-
-      const list: ActiveSessionRow[] = Object.entries(data).map(([key, value]: any) => ({
-        nisn: String(value?.nisn || key || ""),
-        isOnline: value?.isOnline === true,
-        deviceStatus: value?.deviceStatus ? String(value.deviceStatus) : "",
-        lastUpdated: typeof value?.lastUpdated === "number" ? value.lastUpdated : undefined,
-        updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : undefined,
-        lastSeen: typeof value?.lastSeen === "number" ? value.lastSeen : undefined,
-      }));
-
-      setActiveSessions(list);
-    });
-
-    return () => unsub();
-  }, [activeSub, isAuthenticated, mounted, user?.role, _hasHydrated, schoolId]);
-
-  useEffect(() => {
     if (!mounted || !_hasHydrated) return;
     if (!isAuthenticated || user?.role !== "admin") return;
     const unsubs: Array<() => void> = [];
@@ -1586,31 +1537,6 @@ function MasterStudentsContent() {
       return hay.includes(q);
     });
   }, [query, studentRows, schoolId, selectedClass, selectedGrade]);
-
-  const activeSessionByNisn = useMemo(() => {
-    const map = new Map<string, ActiveSessionRow>();
-    for (const session of activeSessions) {
-      const key = normalize(session.nisn);
-      if (!key) continue;
-      map.set(key, session);
-    }
-    return map;
-  }, [activeSessions]);
-
-  const getStudentOnlineMeta = (nisnValue: string) => {
-    const session = activeSessionByNisn.get(normalize(nisnValue));
-    const lastSeenAt = Math.max(
-      Number(session?.lastUpdated || 0),
-      Number(session?.updatedAt || 0),
-      Number(session?.lastSeen || 0),
-    );
-    const isOnline =
-      session?.isOnline === true ||
-      normalize(session?.deviceStatus).toLowerCase() === "online" ||
-      (lastSeenAt > 0 && statusNow - lastSeenAt < 5 * 60 * 1000);
-
-    return { isOnline, lastSeenAt };
-  };
 
   const filteredTeachers = useMemo(() => {
     const q = normalize(query).toLowerCase();
@@ -4382,16 +4308,14 @@ function MasterStudentsContent() {
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">Nama Siswa / Username Login</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">L/P</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">Kelas</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">Akun</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">Device</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">Status</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">Device</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-300">Aksi</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/10">
                         {filtered.map((r) => {
                           const isActive = (r.status || "Aktif") === "Aktif";
-                          const onlineMeta = getStudentOnlineMeta(r.nisn);
                           return (
                             <tr key={r.nisn} className="hover:bg-white/5">
                               <td className="px-4 py-3 font-semibold text-white">{r.nisn}</td>
@@ -4419,22 +4343,6 @@ function MasterStudentsContent() {
                                 <span className="inline-flex items-center rounded-md bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200 ring-1 ring-white/10">
                                   {r.device || "-"}
                                 </span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="inline-flex flex-col items-start gap-2">
-                                  <span
-                                    className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold ring-1 ${
-                                      onlineMeta.isOnline
-                                        ? "bg-emerald-500/10 text-emerald-200 ring-emerald-400/20"
-                                        : "bg-white/5 text-slate-200 ring-white/10"
-                                    }`}
-                                  >
-                                    {onlineMeta.isOnline ? "Online" : "Offline"}
-                                  </span>
-                                  <span className="text-[11px] text-slate-400">
-                                    {onlineMeta.lastSeenAt ? `Update: ${formatDateTime(onlineMeta.lastSeenAt)}` : "Belum ada session realtime"}
-                                  </span>
-                                </div>
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <div className="inline-flex items-center gap-3">
@@ -4473,7 +4381,7 @@ function MasterStudentsContent() {
                         })}
                         {filtered.length === 0 && (
                           <tr>
-                            <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
+                            <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
                               Belum ada data siswa untuk kelas ini.
                             </td>
                           </tr>
