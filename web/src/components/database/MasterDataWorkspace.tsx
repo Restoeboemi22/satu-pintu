@@ -4382,8 +4382,9 @@ function MasterStudentsContent() {
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">Nama Siswa / Username Login</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">L/P</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">Kelas</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">Status</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">Akun</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">Device</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-300">Status</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-300">Aksi</th>
                         </tr>
                       </thead>
@@ -4419,8 +4420,8 @@ function MasterStudentsContent() {
                                   {r.device || "-"}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 text-right">
-                                <div className="inline-flex flex-col items-end gap-2">
+                              <td className="px-4 py-3">
+                                <div className="inline-flex flex-col items-start gap-2">
                                   <span
                                     className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold ring-1 ${
                                       onlineMeta.isOnline
@@ -4430,39 +4431,41 @@ function MasterStudentsContent() {
                                   >
                                     {onlineMeta.isOnline ? "Online" : "Offline"}
                                   </span>
-                                  <div className="inline-flex items-center gap-3">
-                                    <button
-                                      type="button"
-                                      disabled={busy}
-                                      onClick={() => resetStudentDeviceBinding(r.nisn)}
-                                      className="text-orange-300 hover:text-orange-200 disabled:opacity-50"
-                                      aria-label="Reset Device Binding"
-                                      title="Reset Device Binding"
-                                    >
-                                      <Lock className="h-5 w-5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={busy}
-                                      onClick={() => startEdit(r)}
-                                      className="text-sky-300 hover:text-sky-200 disabled:opacity-50"
-                                      aria-label="Edit"
-                                    >
-                                      <Pencil className="h-5 w-5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={busy}
-                                      onClick={() => deleteRow(r.nisn)}
-                                      className="text-red-300 hover:text-red-200 disabled:opacity-50"
-                                      aria-label="Hapus"
-                                    >
-                                      <Trash2 className="h-5 w-5" />
-                                    </button>
-                                  </div>
                                   <span className="text-[11px] text-slate-400">
                                     {onlineMeta.lastSeenAt ? `Update: ${formatDateTime(onlineMeta.lastSeenAt)}` : "Belum ada session realtime"}
                                   </span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <div className="inline-flex items-center gap-3">
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => resetStudentDeviceBinding(r.nisn)}
+                                    className="text-orange-300 hover:text-orange-200 disabled:opacity-50"
+                                    aria-label="Reset Device Binding"
+                                    title="Reset Device Binding"
+                                  >
+                                    <Lock className="h-5 w-5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => startEdit(r)}
+                                    className="text-sky-300 hover:text-sky-200 disabled:opacity-50"
+                                    aria-label="Edit"
+                                  >
+                                    <Pencil className="h-5 w-5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => deleteRow(r.nisn)}
+                                    className="text-red-300 hover:text-red-200 disabled:opacity-50"
+                                    aria-label="Hapus"
+                                  >
+                                    <Trash2 className="h-5 w-5" />
+                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -4470,7 +4473,7 @@ function MasterStudentsContent() {
                         })}
                         {filtered.length === 0 && (
                           <tr>
-                            <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                            <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                               Belum ada data siswa untuk kelas ini.
                             </td>
                           </tr>
