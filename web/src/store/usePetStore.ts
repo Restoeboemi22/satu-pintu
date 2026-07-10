@@ -170,7 +170,7 @@ export const usePetStore = create<PetStore>((set, get) => ({
             );
 
             const parsedPets: PetData[] = [];
-            Object.values(data).forEach((rawPet: any) => {
+            Object.entries(data).forEach(([petKey, rawPet]: [string, any]) => {
               const rawStudentId = String(rawPet?.studentId || '').trim();
               if (!rawStudentId) return;
 
@@ -189,7 +189,8 @@ export const usePetStore = create<PetStore>((set, get) => ({
               }
 
               parsedPets.push({
-                id: String(rawPet.id || ''),
+                // Fall back to the RTDB node key because some legacy records do not persist `id` in the value.
+                id: String(rawPet.id || petKey || ''),
                 studentId: rawStudentId,
                 schoolId: rawPet.schoolId ? String(rawPet.schoolId) : student?.schoolId,
                 studentName: student?.name || String(rawPet.petName || 'Unknown Student'),
@@ -198,19 +199,21 @@ export const usePetStore = create<PetStore>((set, get) => ({
                 status: rawPet.status || 'HAPPY',
                 manualReviveUntil: Number(rawPet.manualReviveUntil || 0) || 0,
                 stats: {
-                  level: rawPet.level || 1,
-                  exp: rawPet.experiencePoints || 0,
-                  maxExp: (rawPet.level || 1) * 100,
-                  health: rawPet.health || 100,
-                  energy: rawPet.energy || 100,
-                  happiness: rawPet.happiness || 100,
-                  intelligence: rawPet.intelligence || 0,
-                  social: rawPet.social || 0,
+                  level: Number(rawPet.level ?? 1) || 1,
+                  exp: Number(rawPet.experiencePoints ?? 0) || 0,
+                  maxExp: (Number(rawPet.level ?? 1) || 1) * 100,
+                  // Preserve zero values from RTDB; zero is meaningful for dead/sekarat state.
+                  health: Number(rawPet.health ?? 100),
+                  energy: Number(rawPet.energy ?? 100),
+                  happiness: Number(rawPet.happiness ?? 100),
+                  intelligence: Number(rawPet.intelligence ?? 0) || 0,
+                  social: Number(rawPet.social ?? 0) || 0,
                   creativity: 0,
-                  coins: rawPet.coins || 0,
-                  hunger: rawPet.hunger || 0
+                  coins: Number(rawPet.coins ?? 0) || 0,
+                  hunger: Number(rawPet.hunger ?? 0) || 0
                 },
-                lastSync: rawPet.updatedAt || Date.now(),
+                // Do not promote legacy records without `updatedAt` to "latest".
+                lastSync: Number(rawPet.updatedAt ?? 0) || 0,
                 lastFed: Number(rawPet.lastFed || 0) || 0,
                 lastPlayed: Number(rawPet.lastPlayed || 0) || 0,
                 lastQuestReset: Number(rawPet.lastQuestReset || 0) || 0,
