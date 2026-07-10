@@ -105,6 +105,20 @@ function sanitizeLocation(location?: SchoolLocationPayload) {
   return { latitude, longitude, radius };
 }
 
+function withTimeout<T>(task: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(message));
+    }, timeoutMs);
+  });
+
+  return Promise.race([task, timeoutPromise]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  }) as Promise<T>;
+}
+
 async function saveAttendanceSchedules(payload: AttendanceSettingsPayload, authorizationHeader?: string | null) {
   const context = await enforceAdminCapability(authorizationHeader, "attendance.settings.write", {
     requestedSchoolId: payload.schoolId,
@@ -177,19 +191,29 @@ async function saveSchoolLocation(payload: AttendanceSettingsPayload, authorizat
   const { profile, schoolId } = context;
   const location = sanitizeLocation(payload.location);
 
-  await getGasAdminDb().ref(`school_settings/${schoolId}/attendance/school_location`).update(location);
-  await getEduLockAdminDb().ref(`schools/${schoolId}/config`).update({
-    latitude: location.latitude,
-    longitude: location.longitude,
-    radius: location.radius,
-    updatedAt: Date.now(),
-    locationSource: "gas_attendance_school_location",
-  });
-  await writeEduLockAuditEvent(profile, {
+  await withTimeout(
+    getGasAdminDb().ref(`school_settings/${schoolId}/attendance/school_location`).update(location),
+    8000,
+    "Timeout saat menyimpan lokasi sekolah ke GAS."
+  );
+  await withTimeout(
+    getEduLockAdminDb().ref(`schools/${schoolId}/config`).update({
+      latitude: location.latitude,
+      longitude: location.longitude,
+      radius: location.radius,
+      updatedAt: Date.now(),
+      locationSource: "gas_attendance_school_location",
+    }),
+    8000,
+    "Timeout saat menyimpan lokasi sekolah ke EduLock."
+  );
+  void writeEduLockAuditEvent(profile, {
     type: "ATTENDANCE_LOCATION_SAVE",
     message: `Lokasi sekolah untuk presensi diperbarui.`,
     schoolId,
     metadata: location,
+  }).catch((error) => {
+    console.error("Failed to write attendance location audit event", error);
   });
 }
 
@@ -200,12 +224,18 @@ async function saveMushollaLocation(payload: AttendanceSettingsPayload, authoriz
   const { profile, schoolId } = context;
   const location = sanitizeLocation(payload.location);
 
-  await getGasAdminDb().ref(`school_settings/${schoolId}/prayer/musholla_location`).update(location);
-  await writeEduLockAuditEvent(profile, {
+  await withTimeout(
+    getGasAdminDb().ref(`school_settings/${schoolId}/prayer/musholla_location`).update(location),
+    8000,
+    "Timeout saat menyimpan lokasi musholla ke GAS."
+  );
+  void writeEduLockAuditEvent(profile, {
     type: "PRAYER_LOCATION_SAVE",
     message: `Lokasi musholla untuk presensi sholat diperbarui.`,
     schoolId,
     metadata: location,
+  }).catch((error) => {
+    console.error("Failed to write prayer location audit event", error);
   });
 }
 
