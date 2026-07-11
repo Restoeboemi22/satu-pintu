@@ -136,9 +136,9 @@ function AdminLoginContent() {
     return String((result as any)?.idToken || "").trim();
   };
 
-  const fetchJsonWithTimeout = async (input: RequestInfo | URL, init?: RequestInit, message?: string) => {
+  const fetchJsonWithTimeout = async (input: RequestInfo | URL, init?: RequestInit, message?: string, timeoutMs = 30000) => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
       return await fetch(input, {
         ...init,
@@ -168,22 +168,39 @@ function AdminLoginContent() {
       headers.Authorization = `Bearer ${await getEduLockIdToken(preferredUser, fallbackCredentials)}`;
     }
 
-    const response = await fetchJsonWithTimeout(
-      "/api/admin/edulock/auth",
-      {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-      },
-      "Permintaan autentikasi EduLock terlalu lama."
-    );
+    const makeRequest = async (timeoutMs: number) => {
+      const response = await fetchJsonWithTimeout(
+        "/api/admin/edulock/auth",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+        },
+        "Permintaan autentikasi EduLock terlalu lama.",
+        timeoutMs
+      );
 
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok || result?.success === false) {
-      throw new Error(String(result?.message || "Permintaan auth EduLock gagal diproses."));
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result?.success === false) {
+        throw new Error(String(result?.message || "Permintaan auth EduLock gagal diproses."));
+      }
+
+      return result;
+    };
+
+    try {
+      return await makeRequest(30000);
+    } catch (firstError: any) {
+      // Retry once on timeout (handles Vercel cold start)
+      const isTimeout = String(firstError?.message || "").includes("terlalu lama");
+      if (!isTimeout) throw firstError;
+
+      // Refresh token for retry in case the original expired during the wait
+      if (withToken) {
+        headers.Authorization = `Bearer ${await getEduLockIdToken(preferredUser, fallbackCredentials)}`;
+      }
+      return await makeRequest(45000);
     }
-
-    return result;
   };
 
   const syncPortalSession = async (
