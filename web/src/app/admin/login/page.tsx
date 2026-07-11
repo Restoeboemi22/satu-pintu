@@ -5,7 +5,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Eye, EyeOff } from "lucide-react";
-import { signInWithEmailAndPassword, updatePassword } from "firebase/auth";
+import { signInWithEmailAndPassword, updatePassword, type User } from "firebase/auth";
 import { edulockAuth } from "@/lib/edulockFirebase";
 
 function normalizeEmail(value: unknown): string {
@@ -14,6 +14,18 @@ function normalizeEmail(value: unknown): string {
 
 function normalizeNpsn(value: unknown): string {
   return String(value || "").trim();
+}
+
+function withTimeout<T>(task: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([task, timeoutPromise]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  }) as Promise<T>;
 }
 
 export default function AdminLoginPage() {
@@ -52,24 +64,55 @@ function AdminLoginContent() {
     npsn?: string;
   } | null>(null);
 
-  const callEduLockAuthApi = async (payload: Record<string, any>, withToken = false) => {
+  const getEduLockIdToken = async (preferredUser?: User | null) => {
+    const activeUser = preferredUser || edulockAuth.currentUser;
+    if (!activeUser) {
+      throw new Error("Sesi EduLock tidak aktif. Silakan login ulang.");
+    }
+
+    return withTimeout(
+      activeUser.getIdToken(),
+      5000,
+      "Timeout saat mengambil token EduLock. Silakan coba lagi."
+    );
+  };
+
+  const fetchJsonWithTimeout = async (input: RequestInfo | URL, init?: RequestInit, message?: string) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    try {
+      return await fetch(input, {
+        ...init,
+        signal: controller.signal,
+      });
+    } catch (error: any) {
+      if (error?.name === "AbortError") {
+        throw new Error(message || "Permintaan melebihi batas waktu. Silakan coba lagi.");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  const callEduLockAuthApi = async (payload: Record<string, any>, withToken = false, preferredUser?: User | null) => {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
 
     if (withToken) {
-      const currentUser = edulockAuth.currentUser;
-      if (!currentUser) {
-        throw new Error("Sesi EduLock tidak aktif. Silakan login ulang.");
-      }
-      headers.Authorization = `Bearer ${await currentUser.getIdToken()}`;
+      headers.Authorization = `Bearer ${await getEduLockIdToken(preferredUser)}`;
     }
 
-    const response = await fetch("/api/admin/edulock/auth", {
+    const response = await fetchJsonWithTimeout(
+      "/api/admin/edulock/auth",
+      {
       method: "POST",
       headers,
       body: JSON.stringify(payload),
-    });
+      },
+      "Permintaan autentikasi EduLock terlalu lama."
+    );
 
     const result = await response.json().catch(() => ({}));
     if (!response.ok || result?.success === false) {
@@ -79,17 +122,14 @@ function AdminLoginContent() {
     return result;
   };
 
-  const syncPortalSession = async (name: string, email: string) => {
-    const currentUser = edulockAuth.currentUser;
-    if (!currentUser) {
-      throw new Error("Sesi EduLock admin belum aktif.");
-    }
-
-    const response = await fetch("/api/portal/session", {
+  const syncPortalSession = async (name: string, email: string, preferredUser?: User | null) => {
+    const response = await fetchJsonWithTimeout(
+      "/api/portal/session",
+      {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${await currentUser.getIdToken()}`,
+        Authorization: `Bearer ${await getEduLockIdToken(preferredUser)}`,
       },
       credentials: "include",
       body: JSON.stringify({
@@ -97,7 +137,9 @@ function AdminLoginContent() {
         name,
         email,
       }),
-    });
+      },
+      "Sinkronisasi sesi Portal terlalu lama."
+    );
 
     const result = await response.json().catch(() => ({}));
     if (!response.ok || result?.success === false) {
@@ -106,8 +148,8 @@ function AdminLoginContent() {
   };
 
   const ensurePortalSessionReady = async () => {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const response = await fetch("/api/portal/session", {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const response = await fetchJsonWithTimeout("/api/portal/session", {
         method: "GET",
         credentials: "include",
         cache: "no-store",
@@ -117,7 +159,7 @@ function AdminLoginContent() {
         return;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 250));
     }
 
     throw new Error("Sesi Portal admin belum aktif penuh. Silakan coba lagi.");
@@ -204,14 +246,16 @@ function AdminLoginContent() {
       let portalEmail = isEmailLogin ? normalizeEmail(raw) : normalizeNpsn(raw);
       let portalRole: "admin" | "super_admin" = "admin";
       let mustChangePasswordFlag = false;
+      let signedInUser: User | null = null;
 
       try {
         if (isEmailLogin) {
           const emailLower = normalizeEmail(raw);
           portalEmail = emailLower;
           const userCredential = await signInWithEmailAndPassword(edulockAuth, emailLower, password);
+          signedInUser = userCredential.user;
           uid = userCredential.user.uid;
-          const syncResult = await callEduLockAuthApi({ action: "sync-profile" }, true);
+          const syncResult = await callEduLockAuthApi({ action: "sync-profile" }, true, userCredential.user);
           const profile = syncResult?.data?.profile || {};
           portalRole = profile?.role === "super_admin" ? "super_admin" : "admin";
           schoolId = String(profile?.schoolId || "");
@@ -233,8 +277,9 @@ function AdminLoginContent() {
           portalRole = "admin";
 
           const userCredential = await signInWithEmailAndPassword(edulockAuth, systemEmail, password);
+          signedInUser = userCredential.user;
           uid = userCredential.user.uid;
-          const syncResult = await callEduLockAuthApi({ action: "sync-profile" }, true);
+          const syncResult = await callEduLockAuthApi({ action: "sync-profile" }, true, userCredential.user);
           const profile = syncResult?.data?.profile || {};
           schoolId = String(profile?.schoolId || schoolId);
           schoolName = String(profile?.schoolName || schoolName);
@@ -257,8 +302,9 @@ function AdminLoginContent() {
             });
             if (bootstrapResult?.data?.created || bootstrapResult?.data?.defaultReady) {
               const userCredential = await signInWithEmailAndPassword(edulockAuth, systemEmail, "admin123");
+              signedInUser = userCredential.user;
               uid = userCredential.user.uid;
-              const syncResult = await callEduLockAuthApi({ action: "sync-profile" }, true);
+              const syncResult = await callEduLockAuthApi({ action: "sync-profile" }, true, userCredential.user);
               const profile = syncResult?.data?.profile || {};
               mustChangePasswordFlag = true;
               schoolId = String(profile?.schoolId || "");
@@ -332,7 +378,7 @@ function AdminLoginContent() {
         schoolName: schoolName || undefined,
         npsn: npsnValue || undefined,
       });
-      await syncPortalSession(portalName, portalEmail);
+      await syncPortalSession(portalName, portalEmail, signedInUser);
       await ensurePortalSessionReady();
 
       const finalReturnTo =
@@ -376,7 +422,7 @@ function AdminLoginContent() {
     try {
       if (!edulockAuth.currentUser) throw new Error("User tidak terautentikasi.");
       await updatePassword(edulockAuth.currentUser, next);
-      await callEduLockAuthApi({ action: "password-changed" }, true);
+      await callEduLockAuthApi({ action: "password-changed" }, true, edulockAuth.currentUser);
 
       login({
         id: pendingSession.uid,
@@ -387,7 +433,7 @@ function AdminLoginContent() {
         schoolName: pendingSession.schoolName,
         npsn: pendingSession.npsn,
       });
-      await syncPortalSession(pendingSession.name, pendingSession.email);
+      await syncPortalSession(pendingSession.name, pendingSession.email, edulockAuth.currentUser);
       await ensurePortalSessionReady();
 
       const dest = String(returnTo || "");
