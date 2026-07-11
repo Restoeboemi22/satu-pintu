@@ -9,13 +9,6 @@ type EduLockAuthPayload = {
   email?: string;
 };
 
-type IdentityToolkitLookupResponse = {
-  users?: Array<{
-    localId?: string;
-    email?: string;
-  }>;
-};
-
 function normalizeText(value: unknown): string {
   return String(value || "").trim();
 }
@@ -29,32 +22,15 @@ function normalizeNpsn(value: unknown): string {
 }
 
 async function lookupUserByIdToken(idToken: string) {
-  const response = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_BOUNDARY.edulock.apiKey}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ idToken }),
-      cache: "no-store",
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error("Token EduLock tidak valid atau sudah kedaluwarsa.");
-  }
-
-  const data = (await response.json()) as IdentityToolkitLookupResponse;
-  const user = data.users?.[0];
-  const uid = normalizeText(user?.localId);
+  const decoded = await getEduLockAdminAuth().verifyIdToken(idToken);
+  const uid = normalizeText(decoded.uid);
   if (!uid) {
     throw new Error("UID pengguna EduLock tidak ditemukan.");
   }
 
   return {
     uid,
-    email: normalizeEmail(user?.email),
+    email: normalizeEmail(decoded.email),
   };
 }
 

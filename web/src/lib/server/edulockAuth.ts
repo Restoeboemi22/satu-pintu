@@ -1,13 +1,6 @@
 import { FIREBASE_BOUNDARY } from "@/lib/firebaseProjectBoundary";
-import { getEduLockAdminDb } from "@/lib/server/firebaseAdmin";
+import { getEduLockAdminAuth, getEduLockAdminDb } from "@/lib/server/firebaseAdmin";
 import { getPortalSessionFromRequest } from "@/lib/server/portalSession";
-
-type IdentityToolkitLookupResponse = {
-  users?: Array<{
-    localId?: string;
-    email?: string;
-  }>;
-};
 
 export type ServerEduLockProfile = {
   uid: string;
@@ -28,32 +21,15 @@ function normalizeRole(value: unknown): "super_admin" | "admin" {
 }
 
 async function lookupUserByIdToken(idToken: string) {
-  const response = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_BOUNDARY.edulock.apiKey}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ idToken }),
-      cache: "no-store",
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error("Token EduLock tidak valid atau sudah kedaluwarsa.");
-  }
-
-  const data = (await response.json()) as IdentityToolkitLookupResponse;
-  const user = data.users?.[0];
-  const uid = normalizeText(user?.localId);
+  const decoded = await getEduLockAdminAuth().verifyIdToken(idToken);
+  const uid = normalizeText(decoded.uid);
   if (!uid) {
     throw new Error("UID pengguna EduLock tidak ditemukan.");
   }
 
   return {
     uid,
-    email: normalizeText(user?.email).toLowerCase(),
+    email: normalizeText(decoded.email).toLowerCase(),
   };
 }
 
