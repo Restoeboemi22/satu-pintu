@@ -21,6 +21,15 @@ function normalizeNpsn(value: unknown): string {
   return normalizeText(value);
 }
 
+async function waitForBestEffortSideEffects(tasks: Array<Promise<unknown>>, timeoutMs = 1200) {
+  if (!tasks.length) return;
+
+  await Promise.race([
+    Promise.allSettled(tasks),
+    new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
+}
+
 async function lookupUserByIdToken(idToken: string) {
   const decoded = await getEduLockAdminAuth().verifyIdToken(idToken);
   const uid = normalizeText(decoded.uid);
@@ -120,17 +129,19 @@ async function syncProfileFromToken(authorizationHeader?: string | null) {
       updatedAt: now,
       lastLoginAt: now,
     });
-    await auth.setCustomUserClaims(nextProfile.uid, {
-      role: "super_admin",
-      schoolId: nextProfile.schoolId || undefined,
-      npsn: nextProfile.npsn || undefined,
-    });
-    await writeEduLockAuditEvent(nextProfile, {
-      type: "edulock.auth.profile_synced",
-      message: "Profil super admin EduLock tersinkron setelah login.",
-      schoolId: nextProfile.schoolId,
-      targetUid: nextProfile.uid,
-    });
+    await waitForBestEffortSideEffects([
+      auth.setCustomUserClaims(nextProfile.uid, {
+        role: "super_admin",
+        schoolId: nextProfile.schoolId || undefined,
+        npsn: nextProfile.npsn || undefined,
+      }),
+      writeEduLockAuditEvent(nextProfile, {
+        type: "edulock.auth.profile_synced",
+        message: "Profil super admin EduLock tersinkron setelah login.",
+        schoolId: nextProfile.schoolId,
+        targetUid: nextProfile.uid,
+      }),
+    ]);
 
     return nextProfile;
   }
@@ -165,17 +176,19 @@ async function syncProfileFromToken(authorizationHeader?: string | null) {
   };
 
   await profileRef.set(nextProfile);
-  await auth.setCustomUserClaims(nextProfile.uid, {
-    role: "admin",
-    schoolId: nextProfile.schoolId,
-    npsn: nextProfile.npsn || undefined,
-  });
-  await writeEduLockAuditEvent(nextProfile, {
-    type: "edulock.auth.profile_synced",
-    message: `Profil admin sekolah ${nextProfile.schoolId} tersinkron setelah login.`,
-    schoolId: nextProfile.schoolId,
-    targetUid: nextProfile.uid,
-  });
+  await waitForBestEffortSideEffects([
+    auth.setCustomUserClaims(nextProfile.uid, {
+      role: "admin",
+      schoolId: nextProfile.schoolId,
+      npsn: nextProfile.npsn || undefined,
+    }),
+    writeEduLockAuditEvent(nextProfile, {
+      type: "edulock.auth.profile_synced",
+      message: `Profil admin sekolah ${nextProfile.schoolId} tersinkron setelah login.`,
+      schoolId: nextProfile.schoolId,
+      targetUid: nextProfile.uid,
+    }),
+  ]);
   return nextProfile;
 }
 

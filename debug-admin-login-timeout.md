@@ -1,0 +1,25 @@
+# Debug Session: admin-login-timeout
+- **Status**: [OPEN]
+- **Issue**: Login admin PortalKita di production tetap gagal dengan pesan `Gagal masuk: Permintaan autentikasi EduLock terlalu lama.`
+- **Current Scope**:
+  - Halaman login: `web/src/app/admin/login/page.tsx`
+  - Route auth: `web/src/app/api/admin/edulock/auth/route.ts`
+  - Server auth helper: `web/src/lib/server/edulockAuth.ts`
+- **Hypotheses**:
+  - H1: Request `/api/admin/edulock/auth` timeout di production sebelum profil admin berhasil disinkronkan.
+  - H2: Deployment yang sedang diuji belum memuat patch terbaru walaupun repo sudah dipush.
+  - H3: Credential/env Admin SDK EduLock di production membuat verifikasi token tersendat.
+  - H4: Browser masih membawa state auth/cookie lama sehingga alur login memanggil jalur yang tidak sehat.
+- **Evidence Plan**:
+  - Ambil snapshot browser production dan jejak network request login.
+  - Validasi build production yang aktif terhadap commit terbaru.
+  - Jika perlu, tambahkan instrumentasi minimal pada route auth untuk mencatat fase yang macet.
+- **Evidence Collected**:
+  - Browser production merekam request Firebase `accounts:lookup` dan `accounts:signInWithPassword` berhasil berjalan.
+  - Setelah itu muncul `POST /api/admin/edulock/auth` namun request berakhir `net::ERR_ABORTED`, konsisten dengan timeout client login.
+  - Ini menguatkan bahwa bottleneck berada di route `sync-profile`, bukan lagi pada render UI atau navigasi portal.
+- **Analysis Status**:
+  - H1: Confirmed
+  - H2: Inconclusive
+  - H3: Inconclusive
+  - H4: Rejected
