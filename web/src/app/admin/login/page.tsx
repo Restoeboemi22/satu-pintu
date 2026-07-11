@@ -7,6 +7,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { Eye, EyeOff } from "lucide-react";
 import { signInWithEmailAndPassword, updatePassword, type User } from "firebase/auth";
 import { edulockAuth } from "@/lib/edulockFirebase";
+import { FIREBASE_BOUNDARY } from "@/lib/firebaseProjectBoundary";
 
 function normalizeEmail(value: unknown): string {
   return String(value || "").trim().toLowerCase();
@@ -27,6 +28,11 @@ function withTimeout<T>(task: Promise<T>, timeoutMs: number, message: string): P
     if (timeoutId) clearTimeout(timeoutId);
   }) as Promise<T>;
 }
+
+type EduLockFallbackCredentials = {
+  email: string;
+  password: string;
+};
 
 export default function AdminLoginPage() {
   return (
@@ -64,17 +70,70 @@ function AdminLoginContent() {
     npsn?: string;
   } | null>(null);
 
-  const getEduLockIdToken = async (preferredUser?: User | null) => {
+  const getEduLockIdToken = async (
+    preferredUser?: User | null,
+    fallbackCredentials?: EduLockFallbackCredentials | null
+  ) => {
     const activeUser = preferredUser || edulockAuth.currentUser;
     if (!activeUser) {
-      throw new Error("Sesi EduLock tidak aktif. Silakan login ulang.");
+      if (!fallbackCredentials) {
+        throw new Error("Sesi EduLock tidak aktif. Silakan login ulang.");
+      }
+      const fallbackToken = await fetchEduLockIdTokenByPassword(fallbackCredentials);
+      if (!fallbackToken) {
+        throw new Error("Sesi EduLock tidak aktif. Silakan login ulang.");
+      }
+      return fallbackToken;
     }
 
-    return withTimeout(
-      activeUser.getIdToken(),
-      5000,
-      "Timeout saat mengambil token EduLock. Silakan coba lagi."
+    const cachedToken =
+      String((activeUser as any)?.stsTokenManager?.accessToken || "").trim() ||
+      String((activeUser as any)?.accessToken || "").trim();
+    if (cachedToken) {
+      return cachedToken;
+    }
+
+    try {
+      return await withTimeout(
+        activeUser.getIdToken(),
+        5000,
+        "Timeout saat mengambil token EduLock. Silakan coba lagi."
+      );
+    } catch (error) {
+      if (!fallbackCredentials) throw error;
+      const fallbackToken = await fetchEduLockIdTokenByPassword(fallbackCredentials);
+      if (!fallbackToken) throw error;
+      return fallbackToken;
+    }
+  };
+
+  const fetchEduLockIdTokenByPassword = async (credentials: EduLockFallbackCredentials) => {
+    const email = normalizeEmail(credentials.email);
+    const password = String(credentials.password || "");
+    if (!email || !password) return "";
+
+    const response = await fetchJsonWithTimeout(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_BOUNDARY.edulock.apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          returnSecureToken: true,
+        }),
+      },
+      "Permintaan token fallback EduLock terlalu lama."
     );
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(String((result as any)?.error?.message || "Gagal mengambil token fallback EduLock."));
+    }
+
+    return String((result as any)?.idToken || "").trim();
   };
 
   const fetchJsonWithTimeout = async (input: RequestInfo | URL, init?: RequestInit, message?: string) => {
@@ -95,13 +154,18 @@ function AdminLoginContent() {
     }
   };
 
-  const callEduLockAuthApi = async (payload: Record<string, any>, withToken = false, preferredUser?: User | null) => {
+  const callEduLockAuthApi = async (
+    payload: Record<string, any>,
+    withToken = false,
+    preferredUser?: User | null,
+    fallbackCredentials?: EduLockFallbackCredentials | null
+  ) => {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
 
     if (withToken) {
-      headers.Authorization = `Bearer ${await getEduLockIdToken(preferredUser)}`;
+      headers.Authorization = `Bearer ${await getEduLockIdToken(preferredUser, fallbackCredentials)}`;
     }
 
     const response = await fetchJsonWithTimeout(
@@ -122,14 +186,19 @@ function AdminLoginContent() {
     return result;
   };
 
-  const syncPortalSession = async (name: string, email: string, preferredUser?: User | null) => {
+  const syncPortalSession = async (
+    name: string,
+    email: string,
+    preferredUser?: User | null,
+    fallbackCredentials?: EduLockFallbackCredentials | null
+  ) => {
     const response = await fetchJsonWithTimeout(
       "/api/portal/session",
       {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${await getEduLockIdToken(preferredUser)}`,
+        Authorization: `Bearer ${await getEduLockIdToken(preferredUser, fallbackCredentials)}`,
       },
       credentials: "include",
       body: JSON.stringify({
@@ -247,15 +316,22 @@ function AdminLoginContent() {
       let portalRole: "admin" | "super_admin" = "admin";
       let mustChangePasswordFlag = false;
       let signedInUser: User | null = null;
+      let tokenFallbackCredentials: EduLockFallbackCredentials | null = null;
 
       try {
         if (isEmailLogin) {
           const emailLower = normalizeEmail(raw);
           portalEmail = emailLower;
+          tokenFallbackCredentials = { email: emailLower, password };
           const userCredential = await signInWithEmailAndPassword(edulockAuth, emailLower, password);
           signedInUser = userCredential.user;
           uid = userCredential.user.uid;
-          const syncResult = await callEduLockAuthApi({ action: "sync-profile" }, true, userCredential.user);
+          const syncResult = await callEduLockAuthApi(
+            { action: "sync-profile" },
+            true,
+            userCredential.user,
+            tokenFallbackCredentials
+          );
           const profile = syncResult?.data?.profile || {};
           portalRole = profile?.role === "super_admin" ? "super_admin" : "admin";
           schoolId = String(profile?.schoolId || "");
@@ -275,11 +351,17 @@ function AdminLoginContent() {
           portalEmail = systemEmail;
           portalName = "Admin Sekolah";
           portalRole = "admin";
+          tokenFallbackCredentials = { email: systemEmail, password };
 
           const userCredential = await signInWithEmailAndPassword(edulockAuth, systemEmail, password);
           signedInUser = userCredential.user;
           uid = userCredential.user.uid;
-          const syncResult = await callEduLockAuthApi({ action: "sync-profile" }, true, userCredential.user);
+          const syncResult = await callEduLockAuthApi(
+            { action: "sync-profile" },
+            true,
+            userCredential.user,
+            tokenFallbackCredentials
+          );
           const profile = syncResult?.data?.profile || {};
           schoolId = String(profile?.schoolId || schoolId);
           schoolName = String(profile?.schoolName || schoolName);
@@ -301,10 +383,16 @@ function AdminLoginContent() {
               npsn: npsnLocal,
             });
             if (bootstrapResult?.data?.created || bootstrapResult?.data?.defaultReady) {
+              tokenFallbackCredentials = { email: systemEmail, password: "admin123" };
               const userCredential = await signInWithEmailAndPassword(edulockAuth, systemEmail, "admin123");
               signedInUser = userCredential.user;
               uid = userCredential.user.uid;
-              const syncResult = await callEduLockAuthApi({ action: "sync-profile" }, true, userCredential.user);
+              const syncResult = await callEduLockAuthApi(
+                { action: "sync-profile" },
+                true,
+                userCredential.user,
+                tokenFallbackCredentials
+              );
               const profile = syncResult?.data?.profile || {};
               mustChangePasswordFlag = true;
               schoolId = String(profile?.schoolId || "");
@@ -378,7 +466,7 @@ function AdminLoginContent() {
         schoolName: schoolName || undefined,
         npsn: npsnValue || undefined,
       });
-      await syncPortalSession(portalName, portalEmail, signedInUser);
+      await syncPortalSession(portalName, portalEmail, signedInUser, tokenFallbackCredentials);
       await ensurePortalSessionReady();
 
       const finalReturnTo =
